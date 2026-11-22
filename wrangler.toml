@@ -23,3 +23,7 @@ fallthrough = true
 # express.json/body-parser não carregam no Workers (iconv-lite); trocados por um stub
 [alias]
 "body-parser" = "./src/stub-body-parser.js"
+
+[observability.logs]
+enabled = false
+invocation_logs = true
