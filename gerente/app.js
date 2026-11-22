@@ -25,7 +25,7 @@
         <p>${dt.dia}<br>${dt.semana}</p>
       </div>
       <div class="cards quatro">
-        <div data-ir="extintores" class="link-card">${Ex.card({ icone: '🧯', cor: 'vermelho', titulo: 'Total de Extintores', valor: d.total, info: 'Em todas as unidades' })}</div>
+        <div data-ir="extintores" class="link-card">${Ex.card({ icone: '▣', cor: 'vermelho', titulo: 'Total de Extintores', valor: d.total, info: 'Em todas as unidades' })}</div>
         <div data-ir="extintores">${Ex.card({ icone: '✓', cor: 'verde', titulo: 'Em Dia', valor: d.em_dia, info: Ex.pct(d.em_dia, d.total) + ' do total' })}</div>
         <div data-ir="extintores">${Ex.card({ icone: '⚠', cor: 'amarelo', titulo: 'Em Atraso', valor: d.em_atraso, info: Ex.pct(d.em_atraso, d.total) + ' do total' })}</div>
         <div data-ir="relatorios">${Ex.card({ icone: '▣', cor: 'azul', titulo: 'Próximas Vistorias', valor: d.proximas_vistorias, info: `Nos próximos ${d.dias} dias` })}</div>
@@ -292,8 +292,8 @@
         <select id="rel-status" style="display:none"><option value="">Todos os status</option>${Ex.opcoesDe('ext').map((o) => `<option value="${o.v}">${esc(o.t)}</option>`).join('')}</select>
         <button class="btn btn-primario" id="rel-gerar">Gerar</button>
         <span class="espaco"></span>
-        <button class="btn" id="rel-csv" disabled>⬇ CSV</button>
-        <button class="btn" id="rel-print" disabled>🖨 Imprimir</button>
+        <button class="btn" id="rel-csv" disabled>CSV</button>
+        <button class="btn" id="rel-print" disabled>Imprimir</button>
       </div>
       <div class="box" id="rel-saida"><div class="aviso-vazio">Escolha as opções e clique em <strong>Gerar</strong>.</div></div>`;
     const $ = (id) => cont.querySelector('#' + id);

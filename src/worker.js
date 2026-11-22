@@ -3,6 +3,7 @@
 import { httpServerHandler } from 'cloudflare:node';
 import estoqueSql from '../db/migrations/002_estoque.sql';
 import loginSql from '../db/migrations/003_login_seguranca.sql';
+import reservasSql from '../db/migrations/004_reservas.sql';
 import app from './app.js';
 import { migrar } from '../api/migrate.js';
 
@@ -11,7 +12,7 @@ process.env.WORKERS = '1';
 // Migração idempotente: roda uma vez por instância do Worker, antes da primeira requisição à API
 let migrado = null;
 app.locals.preparar = () => {
-  if (!migrado) migrado = migrar({ estoqueSql, loginSql }).catch((e) => { migrado = null; throw e; });
+  if (!migrado) migrado = migrar({ estoqueSql, loginSql, reservasSql }).catch((e) => { migrado = null; throw e; });
   return migrado;
 };
 

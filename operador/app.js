@@ -45,13 +45,13 @@
       <div class="titulo"><div><h2>Vistorias e Manutenções</h2><p class="sub">Resumo do dia e extintores que precisam de atenção.</p></div></div>
       <div class="acoes">
         <button class="acao acaoVerde" data-acao="vistoria"><div style="font-size:22px">✓</div><h3>Registrar Vistoria</h3><p>Verificar e atualizar o status do extintor</p></button>
-        <button class="acao acaoAzul" data-acao="manutencao"><div style="font-size:22px">🔧</div><h3>Registrar Manutenção</h3><p>Adicionar manutenção ou recarga</p></button>
+        <button class="acao acaoAzul" data-acao="manutencao"><div style="font-size:22px">⚒</div><h3>Registrar Manutenção</h3><p>Adicionar manutenção ou recarga</p></button>
         <button class="acao acaoCinza" data-acao="novoext"><div style="font-size:22px">＋</div><h3>Adicionar Extintor</h3><p>Cadastrar um novo extintor, com foto</p></button>
       </div>
       <div class="cards quatro">
         ${Ex.card({ icone: '⚠', cor: 'amarelo', titulo: 'Em atraso', valor: d.atrasados, info: 'Extintores com vistoria vencida' })}
         ${Ex.card({ icone: '✓', cor: 'verde', titulo: 'Vistorias hoje', valor: d.vistorias_hoje, info: 'Registradas hoje' })}
-        ${Ex.card({ icone: '🔧', cor: 'azul', titulo: 'Manutenções no mês', valor: d.manutencoes_mes, info: 'Desde o dia 1º' })}
+        ${Ex.card({ icone: '⚒', cor: 'azul', titulo: 'Manutenções no mês', valor: d.manutencoes_mes, info: 'Desde o dia 1º' })}
         ${Ex.card({ icone: '▣', cor: 'vermelho', titulo: 'OS em aberto', valor: d.os_abertas, info: 'Pendentes ou em andamento' })}
       </div>
       <div class="box">

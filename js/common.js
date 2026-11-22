@@ -271,7 +271,7 @@
             return `<select data-f="${f.nome}" aria-label="${esc(f.placeholder || f.nome)}"><option value="">${esc(f.todos || 'Todos')}</option>${f.opcoes.map((o) => `<option value="${esc(o.v)}">${esc(o.t)}</option>`).join('')}</select>`;
           }
           if (f.tipo === 'data') return `<input type="date" data-f="${f.nome}" aria-label="${esc(f.placeholder || f.nome)}" title="${esc(f.placeholder || '')}">`;
-          return `<input type="search" data-f="${f.nome}" placeholder="🔍  ${esc(f.placeholder || 'Pesquisar...')}">`;
+          return `<input type="search" data-f="${f.nome}" placeholder="${esc(f.placeholder || 'Pesquisar...')}">`;
         }).join('')}
         <span class="contagem" data-contagem></span><span class="espaco"></span>
         <span data-botoes style="display:flex;gap:8px;flex-wrap:wrap"></span>
@@ -455,8 +455,8 @@
     caixa.className = 'campo cheio seletor-foto';
     caixa.innerHTML = `<label>${rotulo}</label>
       <div class="seletor-botoes">
-        <button type="button" class="btn btn-sm" data-sel="galeria">🖼 Galeria / arquivos</button>
-        <button type="button" class="btn btn-sm" data-sel="camera">📷 Tirar foto</button>
+        <button type="button" class="btn btn-sm" data-sel="galeria">Galeria / arquivos</button>
+        <button type="button" class="btn btn-sm" data-sel="camera">Tirar foto</button>
         <button type="button" class="btn btn-sm btn-perigo" data-sel="remover" style="display:none">Remover</button>
       </div>
       <input type="file" accept="image/*" hidden data-in="galeria">

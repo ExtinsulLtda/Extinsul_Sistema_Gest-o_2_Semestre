@@ -3,6 +3,7 @@ const express = require('express');
 const db = require('./db');
 const U = require('./util');
 const S = require('./shared');
+const R = require('./reservas');
 const { exige, hashPin, cifraPin, decifraPin, pinEmUso, PIN_REGEX } = require('./auth');
 
 const { wrap, HttpErro, linhas, texto, inteiro, decimal, data, hora, opcao, hojeISO, somaDias, paginacao, resposta, like } = U;
@@ -136,6 +137,8 @@ r.delete('/clientes/:id', wrap(async (req, res) => {
     { sql: 'DELETE FROM ordens_servico WHERE cliente_id = ?', args: [id] },
     { sql: 'DELETE FROM extintores WHERE cliente_id = ?', args: [id] },
     { sql: 'DELETE FROM vencimentos WHERE cliente_id = ?', args: [id] },
+    { sql: 'UPDATE reservas_linhas SET cliente_id = NULL WHERE cliente_id = ?', args: [id] },
+    { sql: 'DELETE FROM reservas_emprestimos WHERE cliente_id = ?', args: [id] },
     { sql: 'DELETE FROM clientes WHERE id = ?', args: [id] },
   ], 'write');
   res.json({ ok: true });
@@ -366,13 +369,17 @@ r.delete('/funcionarios/:id', wrap(async (req, res) => {
     + (await contar('SELECT COUNT(*) AS n FROM manutencoes WHERE operador_id = ?', [id]))
     + (await contar('SELECT COUNT(*) AS n FROM fotos WHERE operador_id = ?', [id]))
     + (await contar('SELECT COUNT(*) AS n FROM ordens_servico WHERE motorista_id = ?', [id]))
-    + (await contar('SELECT COUNT(*) AS n FROM comprovantes WHERE motorista_id = ?', [id]));
+    + (await contar('SELECT COUNT(*) AS n FROM comprovantes WHERE motorista_id = ?', [id]))
+    + (await contar('SELECT COUNT(*) AS n FROM reservas_emprestimos WHERE motorista_id = ?', [id]));
   await db.execute({ sql: 'UPDATE veiculos SET motorista_id = NULL WHERE motorista_id = ?', args: [id] });
   if (refs) {
     await db.execute({ sql: 'UPDATE usuarios SET ativo = 0 WHERE id = ?', args: [id] });
     return res.json({ ok: true, inativado: true });
   }
-  await db.execute({ sql: 'DELETE FROM usuarios WHERE id = ?', args: [id] });
+  await db.batch([
+    { sql: 'UPDATE reservas_tabelas SET criado_por = NULL WHERE criado_por = ?', args: [id] },
+    { sql: 'DELETE FROM usuarios WHERE id = ?', args: [id] },
+  ], 'write');
   res.json({ ok: true, inativado: false });
 }));
 
@@ -526,6 +533,175 @@ r.post('/estoque/:id/movimentos', wrap(async (req, res) => {
   }
   const n = await db.execute({ sql: 'SELECT quantidade FROM produtos WHERE id = ?', args: [id] });
   res.status(201).json({ ok: true, quantidade: Number(n.rows[0].quantidade) });
+}));
+
+/* ================= RESERVAS (TABELAS E EMPRÉSTIMOS) ================= */
+async function confereClientesReservas(lista) {
+  const ids = [...new Set(lista.map((l) => l.cliente_id).filter((x) => x !== null))];
+  if (!ids.length) return;
+  const ach = await db.execute({
+    sql: `SELECT id FROM clientes WHERE id IN (${ids.map(() => '?').join(',')})`,
+    args: ids,
+  });
+  if (ach.rows.length !== ids.length) {
+    throw new HttpErro(400, 'Um ou mais clientes informados nas linhas não foram encontrados.');
+  }
+}
+
+async function carregaTabelaReservas(id) {
+  const t = await db.execute({
+    sql: 'SELECT id, nome, criado_em, data_criacao, horario_criacao, atualizado_em FROM reservas_tabelas WHERE id = ?',
+    args: [id],
+  });
+  if (!t.rows.length) throw new HttpErro(404, 'Tabela de reservas não encontrada.');
+  const ls = await db.execute({
+    sql: `SELECT l.id, l.ordem, l.numero, l.motivo, l.movimentacao, l.cliente_id, c.nome AS cliente
+          FROM reservas_linhas l
+          LEFT JOIN clientes c ON c.id = l.cliente_id
+          WHERE l.tabela_id = ?
+          ORDER BY l.ordem`,
+    args: [id],
+  });
+  return { tabela: { ...t.rows[0] }, linhas: linhas(ls) };
+}
+
+r.get('/reservas', wrap(async (req, res) => {
+  const x = await db.execute(`
+    SELECT t.id, t.nome, t.criado_em, t.data_criacao, t.horario_criacao, t.atualizado_em,
+           COUNT(l.id) AS reservas,
+           SUM(CASE WHEN l.movimentacao = 'Vai' THEN 1 ELSE 0 END) AS indo,
+           SUM(CASE WHEN l.movimentacao = 'Retornou' THEN 1 ELSE 0 END) AS retornados,
+           SUM(CASE WHEN l.motivo = 'E' THEN 1 ELSE 0 END) AS estragados,
+           SUM(CASE WHEN l.motivo = 'V' THEN 1 ELSE 0 END) AS vencidos
+    FROM reservas_tabelas t
+    LEFT JOIN reservas_linhas l ON l.tabela_id = t.id
+    GROUP BY t.id
+    ORDER BY t.criado_em DESC, t.id DESC`);
+  const itens = linhas(x).map((row) => ({
+    ...row,
+    reservas: Number(row.reservas || 0),
+    indo: Number(row.indo || 0),
+    retornados: Number(row.retornados || 0),
+    estragados: Number(row.estragados || 0),
+    vencidos: Number(row.vencidos || 0),
+  }));
+  res.json({ itens });
+}));
+
+r.get('/reservas/:id', wrap(async (req, res) => {
+  const id = inteiro(req.params.id, { obrig: true, nome: 'Tabela', min: 1 });
+  res.json(await carregaTabelaReservas(id));
+}));
+
+r.post('/reservas', wrap(async (req, res) => {
+  const v = R.validaTabelaReservas(req.body || {});
+  await confereClientesReservas(v.linhas);
+  const ts = R.agoraReservaSP();
+  const ins = await db.execute({
+    sql: `INSERT INTO reservas_tabelas(nome, criado_em, data_criacao, horario_criacao, criado_por)
+          VALUES (?,?,?,?,?)`,
+    args: [v.nome, ts.criado_em, ts.data_criacao, ts.horario_criacao, req.user.id],
+  });
+  const tabelaId = Number(ins.lastInsertRowid);
+  if (v.linhas.length) {
+    try {
+      await db.batch([
+        { sql: 'UPDATE reservas_tabelas SET atualizado_em = ? WHERE id = ?', args: [ts.criado_em, tabelaId] },
+        ...v.linhas.map((l) => ({
+          sql: 'INSERT INTO reservas_linhas(tabela_id, ordem, numero, motivo, movimentacao, cliente_id) VALUES (?,?,?,?,?,?)',
+          args: [tabelaId, l.ordem, l.numero, l.motivo, l.movimentacao, l.cliente_id],
+        })),
+      ], 'write');
+    } catch (e) {
+      await db.execute({ sql: 'DELETE FROM reservas_tabelas WHERE id = ?', args: [tabelaId] }).catch(() => {});
+      if (/UNIQUE/i.test(String(e.message))) throw new HttpErro(409, 'Há números de reserva repetidos na tabela.');
+      throw e;
+    }
+  }
+  res.status(201).json(await carregaTabelaReservas(tabelaId));
+}));
+
+r.put('/reservas/:id', wrap(async (req, res) => {
+  const id = inteiro(req.params.id, { obrig: true, nome: 'Tabela', min: 1 });
+  if (!(await existe('reservas_tabelas', id))) throw new HttpErro(404, 'Tabela de reservas não encontrada.');
+  const v = R.validaTabelaReservas(req.body || {});
+  await confereClientesReservas(v.linhas);
+  const agora = new Date().toISOString();
+  try {
+    await db.batch([
+      { sql: 'UPDATE reservas_tabelas SET nome = ?, atualizado_em = ? WHERE id = ?', args: [v.nome, agora, id] },
+      { sql: 'DELETE FROM reservas_linhas WHERE tabela_id = ?', args: [id] },
+      ...v.linhas.map((l) => ({
+        sql: 'INSERT INTO reservas_linhas(tabela_id, ordem, numero, motivo, movimentacao, cliente_id) VALUES (?,?,?,?,?,?)',
+        args: [id, l.ordem, l.numero, l.motivo, l.movimentacao, l.cliente_id],
+      })),
+    ], 'write');
+  } catch (e) {
+    if (/UNIQUE/i.test(String(e.message))) throw new HttpErro(409, 'Há números de reserva repetidos na tabela.');
+    throw e;
+  }
+  res.json(await carregaTabelaReservas(id));
+}));
+
+r.delete('/reservas/:id', wrap(async (req, res) => {
+  const id = inteiro(req.params.id, { obrig: true, nome: 'Tabela', min: 1 });
+  if (!(await existe('reservas_tabelas', id))) throw new HttpErro(404, 'Tabela de reservas não encontrada.');
+  await db.batch([
+    { sql: 'DELETE FROM reservas_linhas WHERE tabela_id = ?', args: [id] },
+    { sql: 'DELETE FROM reservas_tabelas WHERE id = ?', args: [id] },
+  ], 'write');
+  res.json({ ok: true });
+}));
+
+r.get('/reservas-emprestimos', wrap(async (req, res) => {
+  const p = paginacao(req);
+  const onde = [], args = [];
+  if (req.query.status === 'aberto') onde.push('e.devolvido_em IS NULL');
+  else if (req.query.status === 'devolvido') onde.push('e.devolvido_em IS NOT NULL');
+  if (req.query.q) {
+    const q = like(req.query.q);
+    onde.push('(CAST(e.numero_reserva AS TEXT) LIKE ? OR c.nome LIKE ? OR u.nome LIKE ?)');
+    args.push(q, q, q);
+  }
+  const W = onde.length ? 'WHERE ' + onde.join(' AND ') : '';
+  const base = `FROM reservas_emprestimos e
+                JOIN clientes c ON c.id = e.cliente_id
+                JOIN usuarios u ON u.id = e.motorista_id ${W}`;
+  const [tot, x] = await Promise.all([
+    db.execute({ sql: `SELECT COUNT(*) AS n ${base}`, args }),
+    db.execute({
+      sql: `SELECT e.id, e.numero_reserva, e.cliente_id, c.nome AS cliente,
+                   e.motorista_id, u.nome AS motorista, e.criado_em, e.devolvido_em
+            ${base}
+            ORDER BY (e.devolvido_em IS NULL) DESC, e.id DESC
+            LIMIT ? OFFSET ?`,
+      args: [...args, p.limit, p.offset],
+    }),
+  ]);
+  res.json(resposta(linhas(x), Number(tot.rows[0].n), p));
+}));
+
+r.put('/reservas-emprestimos/:id/devolver', wrap(async (req, res) => {
+  const id = inteiro(req.params.id, { obrig: true, nome: 'Empréstimo', min: 1 });
+  const atual = await db.execute({
+    sql: 'SELECT id, devolvido_em FROM reservas_emprestimos WHERE id = ?',
+    args: [id],
+  });
+  if (!atual.rows.length) throw new HttpErro(404, 'Empréstimo não encontrado.');
+  if (atual.rows[0].devolvido_em !== null) throw new HttpErro(409, 'Este empréstimo já foi devolvido.');
+  const rUp = await db.execute({
+    sql: "UPDATE reservas_emprestimos SET devolvido_em = datetime('now') WHERE id = ? AND devolvido_em IS NULL",
+    args: [id],
+  });
+  if (!rUp.rowsAffected) throw new HttpErro(409, 'Este empréstimo já foi devolvido.');
+  res.json({ ok: true });
+}));
+
+r.delete('/reservas-emprestimos/:id', wrap(async (req, res) => {
+  const id = inteiro(req.params.id, { obrig: true, nome: 'Empréstimo', min: 1 });
+  if (!(await existe('reservas_emprestimos', id))) throw new HttpErro(404, 'Empréstimo não encontrado.');
+  await db.execute({ sql: 'DELETE FROM reservas_emprestimos WHERE id = ?', args: [id] });
+  res.json({ ok: true });
 }));
 
 module.exports = r;

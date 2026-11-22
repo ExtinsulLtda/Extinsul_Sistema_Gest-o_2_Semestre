@@ -1,7 +1,7 @@
 /* ==========================================================
    Painel do MOTORISTA - todas as abas
    Menu: Início · Rotas · Ordens de Serviço · Clientes ·
-         Comprovantes · Veículo
+         Comprovantes · Veículo · Reservas
    ========================================================== */
 (function () {
   'use strict';
@@ -15,7 +15,7 @@
    * Fica para uma próxima etapa: ordenar paradas, rota com várias paradas, tempo/distância estimados.
    */
   const destinosDe = (o) => o.destinos || [];
-  const destinoHTML = (d) => `<div style="margin-top:4px">📍 ${esc(d.endereco_texto)}
+  const destinoHTML = (d) => `<div style="margin-top:4px">${esc(d.endereco_texto)}
       ${d.extintores.length ? `<span class="mudo">(${esc(d.extintores.join(', '))})</span>` : ''}
       <span class="mudo">· ${d.origem === 'extintor' ? 'endereço do extintor' : 'endereço fixo do cliente'}</span><br>
       <span style="font-size:11px">Rota até aqui: ${Ex.linksRota(d.endereco_texto, { waze: false })}</span></div>`;
@@ -152,7 +152,7 @@
           : l.estado === 'sem-percurso' ? 'não foi possível traçar o percurso (linha reta no mapa)'
           : l.estado === 'nao-achado' ? '⚠ endereço não encontrado no mapa — confira o cadastro'
           : 'localizando…';
-        return `<div style="margin:3px 0">${l.proximo ? '⭐ ' : ''}<strong>${esc(d.os)}</strong> · ${esc(d.cliente)}${ext}<br>📍 ${esc(d.endereco_texto)} — ${st}
+        return `<div style="margin:3px 0">${l.proximo ? '★ ' : ''}<strong>${esc(d.os)}</strong> · ${esc(d.cliente)}${ext}<br>${esc(d.endereco_texto)} — ${st}
           · ${Ex.linksRota(d.endereco_texto, { waze: false })}</div>`;
       }).join('');
     };
@@ -191,7 +191,7 @@
     const d = await api('/dashboard');
     const dt = Ex.dataExtensa();
     cont.innerHTML = `
-      <div class="titulo"><div><h2>🗺️ &nbsp; Minha Rota de Hoje</h2><p class="sub">Inclui pendências de dias anteriores.</p></div><p>${dt.dia}<br>${dt.semana}</p></div>
+      <div class="titulo"><div><h2>Minha Rota de Hoje</h2><p class="sub">Inclui pendências de dias anteriores.</p></div><p>${dt.dia}<br>${dt.semana}</p></div>
       <div class="resumoMotorista">
         <div class="miniCard"><div class="miniIcon">▣</div><div><strong>${d.rota.length}</strong><span>Ordens de Serviço</span></div></div>
         <div class="miniCard"><div class="miniIcon">♟</div><div><strong>${d.clientes}</strong><span>Clientes</span></div></div>
@@ -206,12 +206,12 @@
           || '<tr><td colspan="6" class="vazio">Nenhuma ordem de serviço para hoje.</td></tr>'}
         </tbody></table></div>
       </div>
-      <div class="box"><div class="boxTitulo">🚗 &nbsp; Meu veículo</div>
+      <div class="box"><div class="boxTitulo">Meu veículo</div>
         ${d.veiculo ? `<div class="detalhe-grid"><div><span>Placa</span>${esc(d.veiculo.placa)}</div><div><span>Modelo</span>${esc(d.veiculo.modelo)}</div>
           <div><span>Quilometragem</span>${Number(d.veiculo.km_atual).toLocaleString('pt-BR')} km</div><div><span>Situação</span>${badge('veic', d.veiculo.status)}</div></div>`
           : '<div class="vazio">Nenhum veículo atribuído a você.</div>'}
       </div>
-      <div class="infoBox"><strong>💡 &nbsp; Dicas</strong><br><br>Mantenha os comprovantes de entrega e peça o nome de quem recebeu. Em caso de imprevistos, entre em contato com o gerente.</div>`;
+      <div class="infoBox"><strong>ⓘ &nbsp; Dicas</strong><br><br>Mantenha os comprovantes de entrega e peça o nome de quem recebeu. Em caso de imprevistos, entre em contato com o gerente.</div>`;
     cont.addEventListener('click', (e) => {
       const ir = e.target.closest('[data-ir]');
       if (ir) { location.hash = '#' + ir.dataset.ir; return; }
@@ -331,7 +331,7 @@
         { t: 'Documento', f: (l) => esc(l.documento || '—') },
         { t: 'Observação', f: (l) => esc(l.observacao || '') },
       ],
-      acoes: () => [{ rotulo: '🖨 Imprimir', acao: 'imprimir' }],
+      acoes: () => [{ rotulo: 'Imprimir', acao: 'imprimir' }],
       aoAcao: (acao, l) => { if (acao === 'imprimir') imprimirComprovante(l); },
     });
   }
@@ -342,7 +342,7 @@
   async function veiculo(cont) {
     const { veiculo: v } = await api('/veiculo');
     if (!v) { cont.innerHTML = '<div class="titulo"><h2>Veículo</h2></div><div class="box"><div class="aviso-vazio">Nenhum veículo está atribuído a você. Peça ao gerente para vincular um veículo.</div></div>'; return; }
-    cont.innerHTML = `<div class="titulo"><div><h2>🚗 &nbsp; Meu veículo</h2><p class="sub">Atualize a quilometragem e a situação ao iniciar e finalizar o dia.</p></div></div>
+    cont.innerHTML = `<div class="titulo"><div><h2>Meu veículo</h2><p class="sub">Atualize a quilometragem e a situação ao iniciar e finalizar o dia.</p></div></div>
       <div class="grade-2">
         <div class="box"><div class="boxTitulo">Dados do veículo</div>
           <div class="detalhe-grid"><div><span>Placa</span>${esc(v.placa)}</div><div><span>Modelo</span>${esc(v.modelo)}</div>
@@ -363,5 +363,108 @@
     });
   }
 
-  Ex.app({ perfil: 'motorista', paginas: { inicio, rotas, os, clientes, comprovantes, veiculo } });
+  /* ---------------------------------------------------------
+     RESERVAS (empréstimos registrados pelo motorista)
+  --------------------------------------------------------- */
+  function fmtDataHoraBR(iso) {
+    if (!iso) return '—';
+    const d = new Date(/Z|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : iso.replace(' ', 'T') + 'Z');
+    if (Number.isNaN(d.getTime())) return esc(iso);
+    return d.toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function reservas(cont) {
+    cont.innerHTML = `
+      <div class="titulo"><div><h2>Empréstimos de Reservas</h2><p class="sub">Informe o número do extintor reserva e o ID do cliente atendido.</p></div></div>
+      <div class="box" style="margin-bottom:14px">
+        <div class="boxTitulo">Registrar empréstimo</div>
+        <form id="f-emp" class="form-grid">
+          <div>
+            <label for="emp-num">Número da reserva *</label>
+            <input id="emp-num" name="numero_reserva" type="text" inputmode="numeric" maxlength="9" required autocomplete="off" placeholder="Ex.: 1042">
+            <div class="ajuda">Somente números inteiros.</div>
+          </div>
+          <div>
+            <label for="emp-cli">ID do cliente *</label>
+            <input id="emp-cli" name="cliente_id" type="number" min="1" step="1" required autocomplete="off" placeholder="Ex.: 1">
+            <div class="ajuda">Digite o código numérico (ID) do cliente.</div>
+          </div>
+          <div class="cheio">
+            <div class="form-erro" style="display:none"></div>
+            <button class="btn btn-primario" type="submit">Registrar empréstimo</button>
+          </div>
+        </form>
+      </div>
+      <div id="emp-lista"></div>`;
+
+    const form = cont.querySelector('#f-emp');
+    const inpNum = cont.querySelector('#emp-num');
+    const erro = form.querySelector('.form-erro');
+    const btnSub = form.querySelector('button[type=submit]');
+
+    inpNum.addEventListener('input', () => {
+      const limpo = inpNum.value.replace(/\D/g, '').slice(0, 9);
+      if (limpo !== inpNum.value) inpNum.value = limpo;
+    });
+
+    const lista = Ex.lista(cont.querySelector('#emp-lista'), {
+      filtros: [
+        { nome: 'q', tipo: 'busca', placeholder: 'Nº da reserva ou cliente' },
+        { nome: 'status', tipo: 'select', opcoes: [{ v: 'aberto', t: 'Em aberto' }, { v: 'devolvido', t: 'Devolvido' }], todos: 'Todas as situações' },
+      ],
+      carregar: (p) => api('/reservas', { params: p }),
+      vazio: 'Você ainda não registrou nenhum empréstimo de reserva.',
+      colunas: [
+        { t: 'Nº Reserva', f: (l) => `<strong>${esc(l.numero_reserva)}</strong>` },
+        { t: 'Cliente', f: (l) => `${esc(l.cliente)} <span class="mudo">(#${l.cliente_id})</span>` },
+        { t: 'Registrado em', classe: 'nowrap', f: (l) => fmtDataHoraBR(l.criado_em) },
+        { t: 'Devolvido em', classe: 'nowrap', f: (l) => fmtDataHoraBR(l.devolvido_em) },
+        {
+          t: 'Situação',
+          f: (l) => (l.devolvido_em
+            ? '<span class="status verde">Devolvido</span>'
+            : '<span class="status amarelo">Em aberto</span>'),
+        },
+      ],
+      acoes: (l) => (l.devolvido_em ? [] : [{ rotulo: 'Registrar devolução', acao: 'devolver', classe: 'btn-verde' }]),
+      aoAcao: async (acao, l, c) => {
+        if (acao !== 'devolver') return;
+        if (!(await Ex.confirmar(`Confirmar a devolução da reserva ${l.numero_reserva}?`, { textoOk: 'Confirmar devolução' }))) return;
+        try {
+          await api(`/reservas/${l.id}/devolver`, { method: 'PUT' });
+          Ex.toast('Devolução registrada.');
+          c.recarregar();
+        } catch (err) { Ex.toast(err.message, true); }
+      },
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      erro.style.display = 'none';
+      btnSub.disabled = true;
+      btnSub.textContent = 'Registrando…';
+      try {
+        const vals = Object.fromEntries(new FormData(form));
+        const r = await api('/reservas', { method: 'POST', body: vals });
+        Ex.toast(`Reserva ${r.numero_reserva} registrada para ${r.cliente}.`);
+        form.reset();
+        lista.recarregar();
+      } catch (err) {
+        erro.textContent = err.message;
+        erro.style.display = 'block';
+      } finally {
+        btnSub.disabled = false;
+        btnSub.textContent = 'Registrar empréstimo';
+      }
+    });
+  }
+
+  Ex.app({ perfil: 'motorista', paginas: { inicio, rotas, os, clientes, comprovantes, veiculo, reservas } });
 })();

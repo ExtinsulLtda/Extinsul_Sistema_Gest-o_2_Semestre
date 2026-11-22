@@ -3,6 +3,7 @@ const express = require('express');
 const db = require('./db');
 const U = require('./util');
 const S = require('./shared');
+const R = require('./reservas');
 const { exige } = require('./auth');
 
 const { wrap, HttpErro, linhas, texto, inteiro, data, opcao, hojeISO, paginacao, resposta, like } = U;
@@ -161,6 +162,83 @@ r.put('/veiculo', wrap(async (req, res) => {
   if (km < v.km_atual) throw new HttpErro(400, `A quilometragem não pode ser menor que a atual (${v.km_atual} km).`);
   const status = opcao((req.body || {}).status, ['disponivel', 'em_uso', 'manutencao'], { nome: 'Status' });
   await db.execute({ sql: 'UPDATE veiculos SET km_atual = ?, status = ? WHERE id = ?', args: [km, status, v.id] });
+  res.json({ ok: true });
+}));
+
+/* ================= RESERVAS (EMPRÉSTIMOS DO MOTORISTA) ================= */
+r.get('/reservas', wrap(async (req, res) => {
+  const p = paginacao(req);
+  const onde = ['e.motorista_id = ?'], args = [req.user.id];
+  if (req.query.status === 'aberto') onde.push('e.devolvido_em IS NULL');
+  else if (req.query.status === 'devolvido') onde.push('e.devolvido_em IS NOT NULL');
+  if (req.query.q) {
+    const q = like(req.query.q);
+    onde.push('(CAST(e.numero_reserva AS TEXT) LIKE ? OR c.nome LIKE ? OR CAST(e.cliente_id AS TEXT) LIKE ?)');
+    args.push(q, q, q);
+  }
+  const W = 'WHERE ' + onde.join(' AND ');
+  const base = `FROM reservas_emprestimos e JOIN clientes c ON c.id = e.cliente_id ${W}`;
+  const [tot, x] = await Promise.all([
+    db.execute({ sql: `SELECT COUNT(*) AS n ${base}`, args }),
+    db.execute({
+      sql: `SELECT e.id, e.numero_reserva, e.cliente_id, c.nome AS cliente, e.criado_em, e.devolvido_em
+            ${base}
+            ORDER BY (e.devolvido_em IS NULL) DESC, e.id DESC
+            LIMIT ? OFFSET ?`,
+      args: [...args, p.limit, p.offset],
+    }),
+  ]);
+  res.json(resposta(linhas(x), Number(tot.rows[0].n), p));
+}));
+
+r.post('/reservas', wrap(async (req, res) => {
+  const b = req.body || {};
+  const numero_reserva = R.validaNumeroReserva(b.numero_reserva, 'Número da reserva', true);
+  const cliente_id = inteiro(b.cliente_id, { nome: 'ID do cliente', obrig: true, min: 1 });
+  const cli = await db.execute({ sql: 'SELECT id, nome FROM clientes WHERE id = ?', args: [cliente_id] });
+  if (!cli.rows.length) {
+    throw new HttpErro(400, 'Cliente não encontrado. Confira o ID do cliente informado.');
+  }
+  const aberto = await db.execute({
+    sql: 'SELECT id FROM reservas_emprestimos WHERE numero_reserva = ? AND devolvido_em IS NULL',
+    args: [numero_reserva],
+  });
+  if (aberto.rows.length) {
+    throw new HttpErro(409, `A reserva ${numero_reserva} já possui um empréstimo em aberto.`);
+  }
+  let ins;
+  try {
+    ins = await db.execute({
+      sql: "INSERT INTO reservas_emprestimos(numero_reserva, cliente_id, motorista_id, criado_em) VALUES (?,?,?,datetime('now'))",
+      args: [numero_reserva, cliente_id, req.user.id],
+    });
+  } catch (e) {
+    if (/UNIQUE/i.test(String(e.message))) {
+      throw new HttpErro(409, `A reserva ${numero_reserva} já possui um empréstimo em aberto.`);
+    }
+    throw e;
+  }
+  res.status(201).json({
+    id: Number(ins.lastInsertRowid),
+    numero_reserva,
+    cliente_id,
+    cliente: cli.rows[0].nome,
+  });
+}));
+
+r.put('/reservas/:id/devolver', wrap(async (req, res) => {
+  const id = inteiro(req.params.id, { obrig: true, nome: 'Empréstimo', min: 1 });
+  const atual = await db.execute({
+    sql: 'SELECT id, devolvido_em FROM reservas_emprestimos WHERE id = ? AND motorista_id = ?',
+    args: [id, req.user.id],
+  });
+  if (!atual.rows.length) throw new HttpErro(404, 'Empréstimo não encontrado para você.');
+  if (atual.rows[0].devolvido_em !== null) throw new HttpErro(409, 'Este empréstimo já foi devolvido.');
+  const rUp = await db.execute({
+    sql: "UPDATE reservas_emprestimos SET devolvido_em = datetime('now') WHERE id = ? AND motorista_id = ? AND devolvido_em IS NULL",
+    args: [id, req.user.id],
+  });
+  if (!rUp.rowsAffected) throw new HttpErro(409, 'Este empréstimo já foi devolvido.');
   res.json({ ok: true });
 }));
 

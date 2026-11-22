@@ -174,6 +174,10 @@ async function migrar(opcoes = {}) {
   const loginSql = opcoes.loginSql || fs.readFileSync(path.join(__dirname, '..', 'db', 'migrations', '003_login_seguranca.sql'), 'utf8');
   await db.executeMultiple(loginSql);
   await addCol('auth_tentativas', 'bloqueado_em', 'INTEGER');
+  // Módulo de reservas e empréstimos: idempotente e aditivo
+  const reservasSql = opcoes.reservasSql || fs.readFileSync(path.join(__dirname, '..', 'db', 'migrations', '004_reservas.sql'), 'utf8');
+  await db.executeMultiple(reservasSql);
+  await addCol('reservas_linhas', 'cliente_id', 'INTEGER REFERENCES clientes(id)');
   await db.batch([
     'CREATE INDEX IF NOT EXISTS idx_manut_ext ON manutencoes(extintor_id)',
     'CREATE INDEX IF NOT EXISTS idx_fotos_data ON fotos(data)',
