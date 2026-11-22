@@ -170,4 +170,8 @@ r.post('/fotos', wrap(async (req, res) => {
 }));
 r.delete('/fotos/:id', wrap(S.excluirFoto));
 
+/* ================= PEÇAS (Peças Global + Travas e Cordões) ================= */
+const P = require('./pecas');
+r.use('/pecas', P.rotasOperador());
+
 module.exports = r;

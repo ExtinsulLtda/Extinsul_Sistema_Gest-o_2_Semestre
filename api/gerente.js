@@ -704,4 +704,8 @@ r.delete('/reservas-emprestimos/:id', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/* ================= PEÇAS (Peças Global + Travas e Cordões + Alertas) ================= */
+const P = require('./pecas');
+r.use('/pecas', P.rotasGerente());
+
 module.exports = r;

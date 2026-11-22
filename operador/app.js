@@ -308,5 +308,6 @@
     if (query.has('nova')) enviar();
   }
 
-  Ex.app({ perfil: 'operador', paginas: { inicio, vistorias, manutencoes, os, extintores, clientes, fotos } });
+  const pecas = window.ExOperadorPecas ? window.ExOperadorPecas.pagina : undefined;
+  Ex.app({ perfil: 'operador', paginas: { inicio, vistorias, manutencoes, os, extintores, clientes, fotos, ...(pecas ? { pecas } : {}) } });
 })();

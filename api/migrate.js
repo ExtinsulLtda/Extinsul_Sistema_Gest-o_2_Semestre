@@ -178,6 +178,9 @@ async function migrar(opcoes = {}) {
   const reservasSql = opcoes.reservasSql || fs.readFileSync(path.join(__dirname, '..', 'db', 'migrations', '004_reservas.sql'), 'utf8');
   await db.executeMultiple(reservasSql);
   await addCol('reservas_linhas', 'cliente_id', 'INTEGER REFERENCES clientes(id)');
+  // Módulo de peças (Peças Global + Travas e Cordões + Preferências): idempotente e aditivo
+  const pecasSql = opcoes.pecasSql || fs.readFileSync(path.join(__dirname, '..', 'db', 'migrations', '005_pecas.sql'), 'utf8');
+  await db.executeMultiple(pecasSql);
   await db.batch([
     'CREATE INDEX IF NOT EXISTS idx_manut_ext ON manutencoes(extintor_id)',
     'CREATE INDEX IF NOT EXISTS idx_fotos_data ON fotos(data)',

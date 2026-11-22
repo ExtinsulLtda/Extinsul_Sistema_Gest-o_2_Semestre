@@ -442,7 +442,10 @@
      CONFIGURAÇÕES
   --------------------------------------------------------- */
   async function config(cont, { api }) {
-    const cfg = await api('/config');
+    const [cfg, prefPecas] = await Promise.all([
+      api('/config'),
+      api('/pecas/preferencia').catch(() => ({ recebe_alertas: false })),
+    ]);
     cont.innerHTML = `
       <div class="titulo"><div><h2>Configurações</h2><p class="sub">Dados da empresa, regras de vistoria e segurança da sua conta.</p></div></div>
       <div class="grade-2">
@@ -465,6 +468,22 @@
             <div class="cheio"><div class="ajuda">4 a 8 números. O PIN é o que identifica você no login — não pode repetir o de outra pessoa.</div>
               <div class="form-erro" style="display:none"></div><button class="btn btn-primario" type="submit">Alterar PIN</button></div>
           </form></div>
+      </div>
+      <div class="box" style="margin-top:10px">
+        <div class="boxTitulo">Alertas e acesso ao módulo Peças</div>
+        <form id="f-pecas-pref" class="form-grid">
+          <div class="cheio">
+            <label class="check" style="margin:0;cursor:pointer">
+              <input type="checkbox" id="cfg-recebe-alertas" name="recebe_alertas"${prefPecas && prefPecas.recebe_alertas ? ' checked' : ''}>
+              <span>Receber alertas de peças</span>
+            </label>
+            <div class="ajuda">Desligado por padrão. Ative esta opção para liberar a aba Peças no seu menu e exibir o sininho de notificações no topo direito.</div>
+          </div>
+          <div class="cheio">
+            <div class="form-erro" style="display:none"></div>
+            <button class="btn btn-primario" type="submit">Salvar preferência de alertas</button>
+          </div>
+        </form>
       </div>`;
     function envio(form, fn, ok) {
       const erro = form.querySelector('.form-erro');
@@ -481,9 +500,16 @@
       if (v.novo !== v.confirma) throw new Error('A confirmação não confere com o novo PIN.');
       await Ex.api('/eu/pin', { method: 'PUT', body: { atual: v.atual, novo: v.novo } });
     }, 'PIN alterado com sucesso.');
+    envio(cont.querySelector('#f-pecas-pref'), async () => {
+      const ativo = cont.querySelector('#cfg-recebe-alertas').checked;
+      const resp = await api('/pecas/preferencia', { method: 'PUT', body: { recebe_alertas: ativo } });
+      if (window.ExGerentePecas) window.ExGerentePecas.atualizarPreferencia(Boolean(resp.recebe_alertas));
+    }, 'Preferência de alertas de peças atualizada.');
   }
 
-  // Módulo Reservas (reservas.js, carregado antes deste arquivo). Se o arquivo falhar ao carregar, as demais abas continuam normais.
+  // Módulos externos (reservas.js e pecas.js carregados antes deste arquivo).
   const reservas = window.ExReservas ? window.ExReservas.pagina : undefined;
-  Ex.app({ perfil: 'gerente', paginas: { inicio, extintores, clientes, os, relatorios, funcionarios, veiculos, ...(reservas ? { reservas } : {}), config } });
+  const pecas = window.ExGerentePecas ? window.ExGerentePecas.pagina : undefined;
+  Ex.app({ perfil: 'gerente', paginas: { inicio, extintores, clientes, os, relatorios, funcionarios, veiculos, ...(reservas ? { reservas } : {}), ...(pecas ? { pecas } : {}), config } });
+  if (window.ExGerentePecas) window.ExGerentePecas.iniciar(Ex.apiDe('gerente'));
 })();

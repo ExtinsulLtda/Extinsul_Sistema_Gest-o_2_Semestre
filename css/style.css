@@ -1401,3 +1401,140 @@ td{
 .barra{ position:sticky; top:0; z-index:50; }
 .barra .dataCurta{ margin-left:auto; }
 @media print{ .btnMenu, .menu-fundo{ display:none !important; } }
+
+/* =========================
+   MÓDULO PEÇAS (Peças Global + Travas e Cordões)
+========================= */
+.menu li svg.pec-ico-menu{ width:15px; height:15px; vertical-align:-2px; margin-right:6px; stroke:currentColor; fill:none; stroke-width:2; }
+
+/* Sub-abas internas (Peças / Travas e Cordões) */
+.pec-subabas{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; border-bottom:1px solid #e2e6ec; padding-bottom:10px; }
+.pec-subaba{
+    border:1px solid #d5dbe2; background:#fff; color:#201d1c; border-radius:6px;
+    padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; transition:.15s;
+}
+.pec-subaba:hover{ background:#f5f7fa; }
+.pec-subaba.ativo{ background:#c62a1f; border-color:#c62a1f; color:#fff; }
+
+/* Badges de situação e status de tabela */
+.pec-badge{ display:inline-block; padding:3px 9px; border-radius:10px; font-size:11px; font-weight:600; white-space:nowrap; }
+.pec-badge-aberta{ background:#e6f6ef; color:#0c6e46; border:1px solid #b5e4cf; }
+.pec-badge-fechada{ background:#eef1f5; color:#46505e; border:1px solid #d5dbe2; }
+.pec-badge-nao_listado{ background:#fff3d6; color:#925200; border:1px solid #f7d992; }
+.pec-badge-em_analise{ background:#ffe9e9; color:#b42318; border:1px solid #f5bcbc; }
+.pec-badge-conferido{ background:#e6f6ef; color:#0c6e46; border:1px solid #b5e4cf; }
+.pec-badge-peca{ background:#fde8e8; color:#9c2118; border:1px solid #f5bcbc; }
+.pec-badge-trava{ background:#e8f0fe; color:#1d4ed8; border:1px solid #bfdbfe; }
+
+/* Fluxo passo a passo mobile-first do Operador */
+.pec-wizard{ max-width:720px; }
+.pec-passos-nav{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+.pec-passo-pill{
+    flex:1 1 90px; background:#f3f5f8; border:1px solid #e1e5eb; border-radius:6px;
+    padding:7px 10px; font-size:11px; color:#5a6575; text-align:center; cursor:pointer;
+}
+.pec-passo-pill strong{ display:block; font-size:12px; color:#201d1c; }
+.pec-passo-pill.ativo{ background:#fff5f5; border-color:#c62a1f; color:#9c2118; }
+.pec-passo-pill.ativo strong{ color:#c62a1f; }
+.pec-passo-pill.feito{ background:#f0faf5; border-color:#8ed8b6; color:#0c6e46; }
+
+.pec-cat-grupo{ margin-top:12px; }
+.pec-cat-grupo h4{ font-size:12px; color:#46505e; text-transform:uppercase; letter-spacing:.4px; margin:0 0 8px; }
+.pec-catalogo-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:8px; }
+.pec-cat-btn{
+    text-align:left; background:#fff; border:1px solid #d5dbe2; border-radius:6px;
+    padding:10px 12px; font-size:13px; color:#201d1c; cursor:pointer; transition:.12s;
+}
+.pec-cat-btn:hover{ border-color:#c62a1f; background:#fff9f9; }
+.pec-cat-btn.selecionado{ border-color:#c62a1f; background:#c62a1f; color:#fff; font-weight:600; }
+
+.pec-campo-destaque{ display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+.pec-campo-destaque input, .pec-campo-destaque select{
+    font-size:16px; padding:11px 12px; border:1px solid #c9d1db; border-radius:6px; width:100%; max-width:340px;
+}
+.pec-campo-destaque input:focus, .pec-campo-destaque select:focus{
+    outline:none; border-color:#c62a1f; box-shadow:0 0 0 3px rgba(198,42,31,.15);
+}
+.pec-wizard-acoes{ display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; align-items:center; }
+
+.pec-resumo-confirma{
+    background:#fbfaf8; border:2px solid #c62a1f; border-radius:8px; padding:14px 16px; margin-top:8px;
+}
+.pec-resumo-confirma h3{ font-size:16px; color:#201d1c; margin:0 0 10px; }
+.pec-resumo-lista{ display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; font-size:13px; }
+.pec-resumo-lista div span{ display:block; font-size:11px; color:#667085; text-transform:uppercase; }
+.pec-resumo-lista div strong{ font-size:14px; color:#201d1c; word-break:break-word; }
+
+.pec-alerta-bloqueado{
+    background:#fff5f5; border:1px solid #f5bcbc; border-left:4px solid #c62a1f;
+    color:#7f1d1d; padding:12px 14px; border-radius:6px; font-size:13px; margin-bottom:12px;
+}
+.pec-sucesso-card{
+    background:#f0faf5; border:1px solid #8ed8b6; border-left:4px solid #16a36d;
+    color:#0c6e46; padding:12px 14px; border-radius:6px; font-size:13px; margin-bottom:12px;
+}
+
+/* Gerente: grade de tabelas e linhas conferidas / com baixa */
+.pec-tabelas-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(270px, 1fr)); gap:10px; margin-bottom:14px; }
+.pec-tab-card{
+    background:#fff; border:1px solid #e1e5ea; border-radius:8px; padding:12px 14px;
+    display:flex; flex-direction:column; gap:8px; transition:.15s;
+}
+.pec-tab-card.ativa{ border-color:#c62a1f; box-shadow:0 0 0 2px rgba(198,42,31,.15); }
+.pec-tab-card-topo{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.pec-tab-card-topo strong{ font-size:14px; color:#201d1c; word-break:break-word; }
+.pec-tab-meta{ font-size:11px; color:#667085; }
+.pec-tab-contadores{ display:flex; gap:8px; flex-wrap:wrap; font-size:11px; color:#46505e; }
+.pec-tab-acoes{ display:flex; gap:6px; flex-wrap:wrap; margin-top:auto; padding-top:4px; }
+
+.pec-linha-baixa td.pec-dado{
+    text-decoration:line-through; color:#8a93a0; background:#f8f9fb;
+}
+.pec-motivo-chip{
+    display:block; margin-top:4px; font-size:11px; color:#9c2118;
+    background:#fff5f5; border-left:3px solid #c62a1f; padding:3px 7px; border-radius:3px;
+}
+.pec-select-sit{
+    border:1px solid #d5dbe2; border-radius:5px; padding:4px 7px; font-size:11.5px; background:#fff; color:#201d1c;
+}
+
+/* Sino de notificações do Gerente (topo direito da barra fixa) */
+.pec-sino-wrap{ position:relative; margin-left:12px; display:inline-flex; align-items:center; }
+.pec-sino-btn{
+    position:relative; background:#fff; border:1px solid #d5dbe2; border-radius:8px;
+    width:36px; height:34px; display:inline-flex; align-items:center; justify-content:center;
+    cursor:pointer; color:#201d1c; transition:.15s; padding:0;
+}
+.pec-sino-btn:hover{ border-color:#c62a1f; color:#c62a1f; background:#fff8f8; }
+.pec-sino-btn svg{ width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:2; }
+.pec-sino-ponto{
+    position:absolute; top:4px; right:5px; width:9px; height:9px; border-radius:50%;
+    background:#c62a1f; border:2px solid #fff;
+}
+.pec-sino-painel{
+    position:absolute; top:42px; right:0; width:390px; max-width:92vw; max-height:74vh;
+    background:#fff; border:1px solid #d5dbe2; border-radius:10px;
+    box-shadow:0 16px 40px rgba(0,0,0,.22); z-index:900; display:flex; flex-direction:column; overflow:hidden;
+}
+.pec-sino-cab{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:10px 14px; border-bottom:1px solid #edf0f2; background:#fbfaf8;
+}
+.pec-sino-cab strong{ font-size:13px; color:#201d1c; }
+.pec-sino-lista{ overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:8px; }
+.pec-noti-item{
+    border:1px solid #e1e5ea; border-left-width:4px; border-radius:7px; padding:9px 11px;
+    font-size:12px; color:#201d1c; display:flex; flex-direction:column; gap:5px;
+}
+.pec-noti-peca{ background:#fff7f7; border-color:#f3cccc; border-left-color:#c62a1f; }
+.pec-noti-trava{ background:#f5f8ff; border-color:#cbdcf9; border-left-color:#1d4ed8; }
+.pec-noti-topo{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
+.pec-noti-meta{ font-size:11px; color:#5a6575; }
+.pec-noti-controles{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-top:2px; }
+
+@media(max-width:600px){
+    .pec-resumo-lista{ grid-template-columns:1fr; }
+    .pec-catalogo-grid{ grid-template-columns:1fr; }
+    .pec-sino-painel{ right:-6px; width:calc(100vw - 20px); }
+}
+@media print{ .pec-sino-wrap{ display:none !important; } }
