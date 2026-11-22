@@ -4,7 +4,7 @@ import { httpServerHandler } from 'cloudflare:node';
 import estoqueSql from '../db/migrations/002_estoque.sql';
 import loginSql from '../db/migrations/003_login_seguranca.sql';
 import app from './app.js';
-import { migrar } from '../api/migrate.js';
+import { migrar } from '../api/_core/migrate.js';
 
 process.env.WORKERS = '1';
 

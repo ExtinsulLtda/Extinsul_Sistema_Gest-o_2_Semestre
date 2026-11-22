@@ -1,7 +1,7 @@
 // Inspeção SOMENTE LEITURA do banco (Turso ou arquivo local, conforme o .env). Não altera nada.
 // Uso: node db/inspecionar.js
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
-const db = require('../api/db');
+const db = require('../api/_core/db');
 
 (async () => {
   const tabelas = (await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).rows.map((r) => r.name);
