@@ -37,15 +37,21 @@
   let desafioToken = null; // mantido apenas em memória durante a Etapa 2
   let bloqueioDeadline = 0;
   let timerId = null;
+  let enviando = false;
 
   // Se já existe sessão completa válida no servidor, vai direto para o painel
   const atual = Ex.sessao();
   if (atual && atual.token && atual.perfil) {
-    Ex.api('/eu')
+    Ex.api('/eu', { ignorarExpiracao: true })
       .then((d) => {
         if (d && d.usuario && d.usuario.perfil) Ex.irPainel(d.usuario.perfil);
       })
-      .catch(() => { Ex.limparSessao(); });
+      .catch((err) => {
+        Ex.limparSessao();
+        if (err && err.status === 401 && !new URLSearchParams(location.search).has('expirou')) {
+          definirStatus('Sua sessão expirou. Informe seu PIN novamente.', 'info');
+        }
+      });
   }
 
   if (new URLSearchParams(location.search).has('expirou')) {
@@ -223,7 +229,7 @@
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (estaBloqueado()) return;
+    if (estaBloqueado() || enviando) return;
     definirStatus('');
 
     if (etapaAtual === 1) {
@@ -234,6 +240,8 @@
         return;
       }
 
+      enviando = true;
+      submitBtn.disabled = true;
       submitBtn.classList.add('loading');
       try {
         const d = await Ex.api('/login', { method: 'POST', body: { pin } });
@@ -251,7 +259,9 @@
           atualizarIndicador({ erroEtapa: 1 });
         }
       } finally {
+        enviando = false;
         submitBtn.classList.remove('loading');
+        if (!estaBloqueado()) submitBtn.disabled = false;
       }
       return;
     }
@@ -264,7 +274,10 @@
       return;
     }
 
+    enviando = true;
+    submitBtn.disabled = true;
     submitBtn.classList.add('loading');
+    let redirecionando = false;
     try {
       const d = await Ex.api('/login/confirmar-nome', {
         method: 'POST',
@@ -279,10 +292,9 @@
       );
       atualizarIndicador({ finalizado: true });
       definirStatus(`Autenticação concluída. Bem-vindo, ${d.usuario.nome.split(' ')[0]}!`, 'ok');
-      submitBtn.disabled = true;
+      redirecionando = true;
       setTimeout(() => Ex.irPainel(d.usuario.perfil), 350);
     } catch (err) {
-      submitBtn.classList.remove('loading');
       if (err.status === 429 && err.dados && err.dados.restante_seg) {
         passField.value = '';
         irEtapa(1, { focar: false });
@@ -297,6 +309,10 @@
         atualizarIndicador({ erroEtapa: 2 });
         nomeField.focus();
       }
+    } finally {
+      enviando = false;
+      submitBtn.classList.remove('loading');
+      if (!redirecionando && !estaBloqueado()) submitBtn.disabled = false;
     }
   });
 

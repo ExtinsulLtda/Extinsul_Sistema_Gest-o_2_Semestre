@@ -32,14 +32,45 @@ function hashPin(pin) {
 }
 function verificaPin(pin, armazenado) {
   try {
-    const partes = String(armazenado || '').trim().split(':');
-    if (partes.length !== 2) return false;
-    const saltHex = partes[0].trim();
-    const hashHex = partes[1].trim();
-    if (!saltHex || !hashHex || !/^[0-9a-f]+$/i.test(saltHex) || !/^[0-9a-f]+$/i.test(hashHex)) return false;
-    const calc = crypto.scryptSync(String(pin), Buffer.from(saltHex, 'hex'), 64, { N: 16384, r: 8, p: 1 });
-    const esperado = Buffer.from(hashHex, 'hex');
-    return calc.length === esperado.length && crypto.timingSafeEqual(calc, esperado);
+    const raw = String(armazenado || '').trim();
+    const pinStr = String(pin ?? '');
+    if (!raw || !pinStr) return false;
+
+    // Formato 1: scrypt (<saltHex>:<hashHex>)
+    if (raw.includes(':')) {
+      const partes = raw.split(':');
+      if (partes.length !== 2) return false;
+      const saltHex = partes[0].trim();
+      const hashHex = partes[1].trim();
+      if (!saltHex || !hashHex || !/^[0-9a-f]+$/i.test(saltHex) || !/^[0-9a-f]+$/i.test(hashHex)) return false;
+      const calc = crypto.scryptSync(pinStr, Buffer.from(saltHex, 'hex'), 64, { N: 16384, r: 8, p: 1 });
+      const esperado = Buffer.from(hashHex, 'hex');
+      return calc.length === esperado.length && crypto.timingSafeEqual(calc, esperado);
+    }
+
+    // Formato 2: PBKDF2-SHA256 (pbkdf2$<iter>$<saltHex>$<hashHex>, usado no Worker/WebCrypto)
+    if (raw.startsWith('pbkdf2$')) {
+      const partes = raw.split('$');
+      if (partes.length !== 4) return false;
+      const iter = Number(partes[1]);
+      const saltHex = partes[2].trim();
+      const hashHex = partes[3].trim();
+      if (!Number.isInteger(iter) || iter < 1000 || iter > 1000000) return false;
+      if (!saltHex || !hashHex || saltHex.length % 2 !== 0 || hashHex.length % 2 !== 0) return false;
+      if (!/^[0-9a-f]+$/i.test(saltHex) || !/^[0-9a-f]+$/i.test(hashHex)) return false;
+      const esperado = Buffer.from(hashHex, 'hex');
+      const calc = crypto.pbkdf2Sync(pinStr, Buffer.from(saltHex, 'hex'), iter, esperado.length, 'sha256');
+      return calc.length === esperado.length && crypto.timingSafeEqual(calc, esperado);
+    }
+
+    // Formato 3: legado em texto puro (4 a 8 dígitos inseridos manualmente no banco)
+    if (/^\d{4,8}$/.test(raw) && /^\d{4,8}$/.test(pinStr)) {
+      const a = Buffer.from(pinStr, 'utf8');
+      const b = Buffer.from(raw, 'utf8');
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
+    }
+
+    return false;
   } catch {
     return false;
   }
@@ -364,8 +395,12 @@ router.post('/login', wrap(async (req, res) => {
     throw new HttpErro(401, 'PIN incorreto ou acesso inativo.');
   }
 
-  // Atualiza cópia cifrada para o gerente caso ainda não exista ou tenha sido renovada
-  if (!u.pin_cifrado || decifraPin(u.pin_cifrado) !== pin) {
+  // Atualiza cópia cifrada para o gerente e converte PIN legado em texto puro para scrypt
+  const precisaHash = /^\d{4,8}$/.test(String(u.pin_hash || '').trim());
+  const precisaCifrado = !u.pin_cifrado || decifraPin(u.pin_cifrado) !== pin;
+  if (precisaHash) {
+    await db.execute({ sql: 'UPDATE usuarios SET pin_hash = ?, pin_cifrado = ? WHERE id = ?', args: [hashPin(pin), cifraPin(pin), u.id] }).catch(() => {});
+  } else if (precisaCifrado) {
     await db.execute({ sql: 'UPDATE usuarios SET pin_cifrado = ? WHERE id = ?', args: [cifraPin(pin), u.id] }).catch(() => {});
   }
 

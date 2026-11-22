@@ -29,7 +29,7 @@
   Ex.sair = () => { Ex.limparSessao(); Ex.irLogin(); };
 
   /* ---------- API ---------- */
-  Ex.api = async (caminho, { method = 'GET', body, params } = {}) => {
+  Ex.api = async (caminho, { method = 'GET', body, params, ignorarExpiracao = false } = {}) => {
     let url = API_BASE + '/api' + caminho;
     if (params) {
       const q = new URLSearchParams();
@@ -49,7 +49,7 @@
       throw new Error('Sem conexão com o servidor.');
     }
     const d = await r.json().catch(() => ({}));
-    if (r.status === 401 && sessao && caminho !== '/login' && !caminho.startsWith('/login/')) {
+    if (r.status === 401 && sessao && !ignorarExpiracao && caminho !== '/login' && !caminho.startsWith('/login/')) {
       Ex.limparSessao(); Ex.irLogin('expirou');
       const err = new Error(d.erro || 'Sessão expirada.');
       err.status = r.status; err.dados = d;
