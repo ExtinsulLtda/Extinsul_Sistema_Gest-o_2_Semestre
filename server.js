@@ -2,7 +2,7 @@
 require('dotenv').config();
 const path = require('path');
 const express = require('express');
-const { migrar } = require('./api/_core/migrate');
+const { migrar } = require('./api/migrate');
 const app = require('./src/app');
 
 const PORT = Number(process.env.PORT) || 3000;

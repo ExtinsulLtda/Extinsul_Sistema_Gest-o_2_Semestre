@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
+    "seed": "python3 db/seed.py",
     "build": "node scripts/build-public.js",
-    "lint": "node scripts/lint.js"
+    "lint": "node scripts/lint.js",
+    "dev:worker": "wrangler dev",
+    "deploy": "wrangler deploy"
   },
   "engines": {
     "node": ">=18"

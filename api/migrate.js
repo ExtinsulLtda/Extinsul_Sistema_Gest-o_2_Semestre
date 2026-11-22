@@ -168,10 +168,10 @@ async function migrar(opcoes = {}) {
   }
   // Módulo de estoque: estrutura em arquivo SQL próprio (db/migrations), também aplicável à mão com o Turso CLI
   // No Cloudflare Workers o SQL vem embutido no bundle (opcoes.estoqueSql); no Node, lê do arquivo
-  const estoqueSql = opcoes.estoqueSql || fs.readFileSync(path.join(__dirname, '..', '..', 'db', 'migrations', '002_estoque.sql'), 'utf8');
+  const estoqueSql = opcoes.estoqueSql || fs.readFileSync(path.join(__dirname, '..', 'db', 'migrations', '002_estoque.sql'), 'utf8');
   await db.executeMultiple(estoqueSql);
   // Módulo de segurança do login (auth_tentativas e auth_logs): idempotente e aditivo
-  const loginSql = opcoes.loginSql || fs.readFileSync(path.join(__dirname, '..', '..', 'db', 'migrations', '003_login_seguranca.sql'), 'utf8');
+  const loginSql = opcoes.loginSql || fs.readFileSync(path.join(__dirname, '..', 'db', 'migrations', '003_login_seguranca.sql'), 'utf8');
   await db.executeMultiple(loginSql);
   await addCol('auth_tentativas', 'bloqueado_em', 'INTEGER');
   await db.batch([
