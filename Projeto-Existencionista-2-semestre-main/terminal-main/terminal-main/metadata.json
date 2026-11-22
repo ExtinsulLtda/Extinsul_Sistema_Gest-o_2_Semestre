@@ -1,0 +1,6 @@
+{
+  "name": "Sistema de Controle de Extintores (Terminal Python)",
+  "description": "Sistema profissional em Python para gerenciamento de extintores, Ordens de Serviço, estoque de peças, histórico e relatórios via terminal com SQLite.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

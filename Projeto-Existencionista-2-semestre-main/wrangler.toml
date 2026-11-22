@@ -1,0 +1,25 @@
+name = "extinsul"
+main = "src/worker.js"
+compatibility_date = "2025-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[build]
+command = "node scripts/build-public.js"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+# Só as rotas /api/* passam pelo Worker; o resto é servido como arquivo estático
+run_worker_first = ["/api/*"]
+
+# .sql é embutido no bundle como texto (usado pela migração do estoque)
+[[rules]]
+type = "Text"
+globs = ["**/*.sql"]
+fallthrough = true
+
+# Segredos (não coloque aqui): wrangler secret put TURSO_DATABASE_URL | TURSO_AUTH_TOKEN | SESSION_SECRET
+
+# express.json/body-parser não carregam no Workers (iconv-lite); trocados por um stub
+[alias]
+"body-parser" = "./src/stub-body-parser.js"

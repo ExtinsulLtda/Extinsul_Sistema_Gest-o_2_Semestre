@@ -1,0 +1,25 @@
+{
+  "name": "extinsul",
+  "version": "1.0.0",
+  "description": "Extinsul - gestão e manutenção de extintores (Express + Turso/libSQL)",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "seed": "python3 db/seed.py",
+    "build": "node scripts/build-public.js",
+    "dev:worker": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}
