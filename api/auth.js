@@ -27,15 +27,22 @@ const MSG_BLOQUEIO = 'Você atingiu o limite de tentativas de acesso. Aguarde o 
 /* ---------- PIN ---------- */
 function hashPin(pin) {
   const salt = crypto.randomBytes(16);
-  const h = crypto.scryptSync(String(pin), salt, 64);
+  const h = crypto.scryptSync(String(pin), salt, 64, { N: 16384, r: 8, p: 1 });
   return salt.toString('hex') + ':' + h.toString('hex');
 }
 function verificaPin(pin, armazenado) {
-  const [saltHex, hashHex] = String(armazenado).split(':');
-  if (!saltHex || !hashHex) return false;
-  const calc = crypto.scryptSync(String(pin), Buffer.from(saltHex, 'hex'), 64);
-  const esperado = Buffer.from(hashHex, 'hex');
-  return calc.length === esperado.length && crypto.timingSafeEqual(calc, esperado);
+  try {
+    const partes = String(armazenado || '').trim().split(':');
+    if (partes.length !== 2) return false;
+    const saltHex = partes[0].trim();
+    const hashHex = partes[1].trim();
+    if (!saltHex || !hashHex || !/^[0-9a-f]+$/i.test(saltHex) || !/^[0-9a-f]+$/i.test(hashHex)) return false;
+    const calc = crypto.scryptSync(String(pin), Buffer.from(saltHex, 'hex'), 64, { N: 16384, r: 8, p: 1 });
+    const esperado = Buffer.from(hashHex, 'hex');
+    return calc.length === esperado.length && crypto.timingSafeEqual(calc, esperado);
+  } catch {
+    return false;
+  }
 }
 // O login identifica o usuário pelo PIN; por isso ele precisa ser único.
 async function pinEmUso(pin, ignorarId = null) {
