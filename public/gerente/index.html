@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gerente · Extinsul</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="icon" href="../assets/logo.png">
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<div id="gerente" class="painel ativo">
+
+  <div class="cabecalho cabGerente">
+    <h1>👤   GERENTE</h1>
+    <p>Visão geral e gestão completa do sistema</p>
+  </div>
+
+  <div class="sistema">
+
+    <aside class="menu menuGerente">
+      <div class="logo">
+        <span class="logoIcon">🔥</span><strong>EXTINTORES</strong>
+        <span>Gestão e Manutenção</span>
+      </div>
+      <ul>
+        <li data-pagina="inicio" data-titulo="Início">⌂   Início</li>
+        <li data-pagina="extintores" data-titulo="Extintores">♜   Extintores</li>
+        <li data-pagina="clientes" data-titulo="Clientes">♟   Clientes</li>
+        <li data-pagina="os" data-titulo="Ordens de Serviço">▣   Ordens de Serviço</li>
+        <li data-pagina="relatorios" data-titulo="Relatórios">▤   Relatórios</li>
+        <li data-pagina="funcionarios" data-titulo="Funcionários">♟   Funcionários</li>
+        <li data-pagina="veiculos" data-titulo="Veículos">🚗   Veículos</li>
+        <li data-pagina="reservas" data-titulo="Reservas">☰   Reservas</li>
+        <li data-pagina="config" data-titulo="Configurações">⚙  Configurações</li>
+      </ul>
+      <div class="menuFinal">
+        <div class="usuario">
+          <div class="avatar">●</div>
+          <div><span class="nomeUsuario">—</span><br><small>Gerente</small></div>
+        </div>
+        <div class="sair">⇥   Sair</div>
+      </div>
+    </aside>
+
+    <main class="conteudo">
+      <div class="barra">
+        <span class="tituloPagina" id="tituloPagina"></span>
+        <span class="dataHoje2 dataCurta"></span>
+      </div>
+      <div id="pagina"></div>
+    </main>
+
+  </div>
+</div>
+
+<script src="../js/common.js"></script>
+<script src="reservas.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
