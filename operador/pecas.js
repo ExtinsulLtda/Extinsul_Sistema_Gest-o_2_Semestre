@@ -201,7 +201,7 @@
             </div>
             <div class="pec-wizard-acoes">
               <button type="button" class="btn" id="op-peca-voltar"${stPeca.enviando ? ' disabled' : ''}>Voltar</button>
-              <button type="button" class="btn btn-verde" id="op-peca-enviar"${stPeca.enviando ? ' disabled' : ''}>${stPeca.enviando ? 'Enviando…' : 'Enviar lançamento'}</button>
+              <button type="button" class="btn btn-verde" id="op-peca-enviar"${stPeca.enviando ? ' disabled' : ''}>${stPeca.enviando ? Ex.carregando({ tamanho: 'sm', inline: true, texto: 'Enviando…' }) : 'Enviar lançamento'}</button>
             </div>
           </div>`;
       }
@@ -269,7 +269,7 @@
             </div>
             <div class="pec-wizard-acoes">
               <button type="button" class="btn" id="op-trava-voltar"${stTrava.enviando ? ' disabled' : ''}>Voltar</button>
-              <button type="button" class="btn btn-verde" id="op-trava-enviar"${stTrava.enviando ? ' disabled' : ''}>${stTrava.enviando ? 'Enviando…' : 'Confirmar envio'}</button>
+              <button type="button" class="btn btn-verde" id="op-trava-enviar"${stTrava.enviando ? ' disabled' : ''}>${stTrava.enviando ? Ex.carregando({ tamanho: 'sm', inline: true, texto: 'Enviando…' }) : 'Confirmar envio'}</button>
             </div>
           </div>`;
       } else {

@@ -16,7 +16,41 @@ async function addCol(tabela, coluna, def) {
 }
 const contagem = async (t) => Number((await db.execute(`SELECT COUNT(*) AS n FROM ${t}`)).rows[0].n);
 
+let statusPecas = { ok: true, erro: null };
+const obterStatusPecas = () => ({ ...statusPecas });
+
+async function migrarPecas(opcoes = {}) {
+  try {
+    const pecasSql = opcoes.pecasSql || fs.readFileSync(path.join(__dirname, '..', 'db', 'migrations', '005_pecas.sql'), 'utf8');
+    await db.execute('PRAGMA foreign_keys = ON');
+    await db.executeMultiple(pecasSql);
+    await addCol('pecas_catalogo', 'ativo', 'INTEGER NOT NULL DEFAULT 1');
+    await addCol('pecas_lancamentos', 'atualizado_por', 'INTEGER REFERENCES usuarios(id)');
+    await addCol('pecas_lancamentos', 'atualizado_em', 'TEXT');
+    await addCol('pecas_travas_lancamentos', 'atualizado_por', 'INTEGER REFERENCES usuarios(id)');
+    await addCol('pecas_travas_lancamentos', 'atualizado_em', 'TEXT');
+    // Garante registro retroativo em pecas_notificacoes para lançamentos existentes sem duplicar
+    await db.execute(`
+      INSERT OR IGNORE INTO pecas_notificacoes(tipo, lancamento_id, criado_em)
+      SELECT 'peca', id, criado_em FROM pecas_lancamentos
+    `);
+    await db.execute(`
+      INSERT OR IGNORE INTO pecas_notificacoes(tipo, lancamento_id, criado_em)
+      SELECT 'trava_cordao', id, criado_em FROM pecas_travas_lancamentos
+    `);
+    statusPecas = { ok: true, erro: null };
+  } catch (e) {
+    // Falha na migração de Peças nunca pode impedir o login ou as outras abas do sistema
+    statusPecas = {
+      ok: false,
+      erro: 'O módulo Peças está temporariamente indisponível enquanto o banco é preparado. As demais abas continuam funcionando normalmente.',
+    };
+    console.error('[migrate:pecas] Falha isolada ao preparar tabelas do módulo Peças:', e && e.message ? e.message : e);
+  }
+}
+
 async function migrar(opcoes = {}) {
+  await db.execute('PRAGMA foreign_keys = ON');
   /* ----- tabelas base (caso o banco ainda esteja vazio) ----- */
   await db.batch([
     `CREATE TABLE IF NOT EXISTS usuarios (
@@ -178,9 +212,6 @@ async function migrar(opcoes = {}) {
   const reservasSql = opcoes.reservasSql || fs.readFileSync(path.join(__dirname, '..', 'db', 'migrations', '004_reservas.sql'), 'utf8');
   await db.executeMultiple(reservasSql);
   await addCol('reservas_linhas', 'cliente_id', 'INTEGER REFERENCES clientes(id)');
-  // Módulo de peças (Peças Global + Travas e Cordões + Preferências): idempotente e aditivo
-  const pecasSql = opcoes.pecasSql || fs.readFileSync(path.join(__dirname, '..', 'db', 'migrations', '005_pecas.sql'), 'utf8');
-  await db.executeMultiple(pecasSql);
   await db.batch([
     'CREATE INDEX IF NOT EXISTS idx_manut_ext ON manutencoes(extintor_id)',
     'CREATE INDEX IF NOT EXISTS idx_fotos_data ON fotos(data)',
@@ -191,6 +222,9 @@ async function migrar(opcoes = {}) {
   if ((await contagem('usuarios')) === 0) {
     await seedInicial();
   }
+
+  // Migração de Peças é isolada ao final: erro nela não derruba login nem as demais abas
+  await migrarPecas(opcoes);
 }
 
 async function seedInicial() {
@@ -293,4 +327,4 @@ async function seedInicial() {
   }
 }
 
-module.exports = { migrar };
+module.exports = { migrar, migrarPecas, obterStatusPecas };

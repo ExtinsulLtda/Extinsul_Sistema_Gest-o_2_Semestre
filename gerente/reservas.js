@@ -648,7 +648,8 @@
   /* ---------- Sub-aba Tabelas: lista ---------- */
   async function mostrarLista(cont) {
     abaAtiva = 'tabelas';
-    cont.innerHTML = `${cabecalhoSubAbas(cont, { mostrarBotaoNova: true })}<div class="carregando-pag">Carregando…</div>`;
+    const loaderHTML = exTem('carregando') ? Ex.carregando({ texto: 'Carregando…' }) : '<div class="carregando-pag">Carregando…</div>';
+    cont.innerHTML = `${cabecalhoSubAbas(cont, { mostrarBotaoNova: true })}${loaderHTML}`;
     ligarSubAbas(cont);
 
     const btnNova = cont.querySelector('#rsv-nova');
@@ -710,7 +711,8 @@
     if (btnMig) {
       btnMig.addEventListener('click', async () => {
         btnMig.disabled = true;
-        btnMig.textContent = 'Enviando…';
+        if (exTem('carregando')) btnMig.innerHTML = Ex.carregando({ tamanho: 'sm', inline: true, texto: 'Enviando…' });
+        else btnMig.textContent = 'Enviando…';
         let ok = 0;
         const restantes = [];
         for (const tBruta of locais) {

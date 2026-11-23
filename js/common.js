@@ -102,13 +102,71 @@
   Ex.TIPOS_OS = ['Recarga', 'Manutenção', 'Vistoria'].map((t) => ({ v: t, t }));
   Ex.TIPOS_MANUT = ['Recarga', 'Manutenção', 'Teste hidrostático', 'Troca de peça'].map((t) => ({ v: t, t }));
 
+  /* ---------- carregamentos animados (Grid Snake e Cubos 3D) ---------- */
+  const prefMovReduzido = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  Ex.carregando = ({ tamanho = 'md', texto = 'Carregando…', inline = false, classe = '' } = {}) => {
+    const tam = tamanho === 'sm' ? 'sm' : 'md';
+    const grade = `<span class="ex-snake ex-snake-${tam}" aria-hidden="true">${'<span></span>'.repeat(9)}</span>`;
+    if (inline) {
+      return `<span class="ex-carregando-inline${classe ? ' ' + esc(classe) : ''}" role="status" aria-live="polite">${grade}${texto ? `<span>${esc(texto)}</span>` : ''}</span>`;
+    }
+    return `<div class="carregando-pag${classe ? ' ' + esc(classe) : ''}"><div class="ex-carregando-bloco" role="status" aria-live="polite">${grade}${texto ? `<span>${esc(texto)}</span>` : ''}</div></div>`;
+  };
+
+  Ex.telaCarregando = (() => {
+    let el = null;
+    let ativos = 0;
+
+    function garantir() {
+      if (el && el.isConnected) return el;
+      el = document.createElement('div');
+      el.className = 'ex-tela-carregando';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      el.setAttribute('aria-hidden', 'true');
+      const cuboFaces = Array.from({ length: 6 }, (_, i) => `<span class="ex-cubo-face ex-cubo-f${i + 1}"></span>`).join('');
+      el.innerHTML = `
+        <div class="ex-cubos-palco" aria-hidden="true">
+          <div class="ex-cubo ex-cubo-principal">${cuboFaces}</div>
+          <div class="ex-cubo ex-cubo-satelite">${cuboFaces}</div>
+        </div>
+        <div class="ex-tela-texto">Carregando</div>`;
+      document.body.appendChild(el);
+      return el;
+    }
+
+    return {
+      mostrar(texto = 'Carregando') {
+        ativos += 1;
+        const ov = garantir();
+        const txt = ov.querySelector('.ex-tela-texto');
+        if (txt) txt.textContent = texto || 'Carregando';
+        ov.setAttribute('aria-hidden', 'false');
+        if (prefMovReduzido()) ov.classList.add('visivel');
+        else requestAnimationFrame(() => { if (ativos > 0) ov.classList.add('visivel'); });
+      },
+      esconder(forcar = false) {
+        ativos = forcar ? 0 : Math.max(0, ativos - 1);
+        if (ativos > 0 || !el) return;
+        el.classList.remove('visivel');
+        el.setAttribute('aria-hidden', 'true');
+      },
+    };
+  })();
+
   /* ---------- avisos ---------- */
   Ex.toast = (msg, erro) => {
     const t = document.createElement('div');
     t.className = 'toast' + (erro ? ' erro' : '');
     t.textContent = msg;
     document.body.appendChild(t);
-    setTimeout(() => t.remove(), 3200);
+    setTimeout(() => {
+      if (!t.isConnected) return;
+      if (prefMovReduzido()) { t.remove(); return; }
+      t.classList.add('saindo');
+      setTimeout(() => { if (t.isConnected) t.remove(); }, 190);
+    }, 3000);
   };
 
   /* ---------- modal ---------- */
@@ -122,12 +180,20 @@
     if (typeof corpo === 'string') corpoEl.innerHTML = corpo; else if (corpo) corpoEl.appendChild(corpo);
     const rod = fundo.querySelector('.modal-rod');
     const onKey = (e) => { if (e.key === 'Escape') api.fechar(); };
+    let fechando = false;
     const api = {
       el: fundo, corpo: corpoEl, botoes: [],
       fechar() {
-        if (!fundo.isConnected) return;
-        fundo.remove(); document.removeEventListener('keydown', onKey);
+        if (fechando || !fundo.isConnected) return;
+        fechando = true;
+        document.removeEventListener('keydown', onKey);
         if (aoFechar) aoFechar();
+        if (prefMovReduzido()) {
+          fundo.remove();
+          return;
+        }
+        fundo.classList.add('saindo');
+        setTimeout(() => { if (fundo.isConnected) fundo.remove(); }, 185);
       },
     };
     botoes.forEach((b) => {
@@ -296,7 +362,7 @@
       return p;
     };
     async function carregar() {
-      tabelaEl.innerHTML = '<div class="carregando-pag">Carregando…</div>';
+      tabelaEl.innerHTML = Ex.carregando({ texto: 'Carregando registros…' });
       try {
         const d = await cfg.carregar(params());
         linhas = d.itens;
@@ -631,7 +697,9 @@
     itens.forEach((li) => { li.onclick = () => { alternarMenu(false); location.hash = '#' + li.dataset.pagina; }; });
     document.querySelectorAll('.sair').forEach((e) => { e.onclick = Ex.sair; });
 
+    let cargaAtual = 0;
     async function rotear() {
+      const token = ++cargaAtual;
       const [nome0, qs] = (location.hash || '').slice(1).split('?');   // ex.: #clientes?novo
       let nome = nome0 || padrao;
       if (!paginas[nome]) nome = padrao;
@@ -642,11 +710,22 @@
       if (tit && li) tit.textContent = li.dataset.titulo || '';
       document.title = `${li ? li.dataset.titulo + ' · ' : ''}Extinsul`;
       const cont = document.createElement('div');          // contêiner novo: respostas atrasadas não sobrescrevem a aba atual
-      cont.innerHTML = '<div class="carregando-pag">Carregando…</div>';
+      cont.innerHTML = Ex.carregando({ texto: 'Carregando…' });
       alvo.replaceChildren(cont);
       window.scrollTo(0, 0);
-      try { await paginas[nome](cont, { sessao, perfil, query, api: Ex.apiDe(perfil) }); }
-      catch (e) { console.error(e); cont.innerHTML = `<div class="aviso-vazio">${esc(e.message || 'Erro ao carregar a página.')}</div>`; }
+      Ex.telaCarregando.mostrar('Carregando');
+      try {
+        await paginas[nome](cont, { sessao, perfil, query, api: Ex.apiDe(perfil) });
+        if (token === cargaAtual) cont.classList.add('ex-pagina-entra');
+      } catch (e) {
+        console.error(e);
+        if (token === cargaAtual) {
+          cont.innerHTML = `<div class="aviso-vazio">${esc(e.message || 'Erro ao carregar a página.')}</div>`;
+          cont.classList.add('ex-pagina-entra');
+        }
+      } finally {
+        if (token === cargaAtual) Ex.telaCarregando.esconder(true);
+      }
     }
     window.addEventListener('hashchange', rotear);
     Ex.recarregarPagina = rotear;

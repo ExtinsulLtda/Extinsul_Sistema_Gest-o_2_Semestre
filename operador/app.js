@@ -272,7 +272,7 @@
     const grade = cont.querySelector('#ft-grade'), pag = cont.querySelector('#ft-pag');
     let itens = [];
     async function carregar() {
-      grade.innerHTML = '<div class="carregando-pag">Carregando…</div>';
+      grade.innerHTML = Ex.carregando({ texto: 'Carregando fotos…' });
       try {
         const d = await api('/fotos', { params: { page, limit: 12 } });
         itens = d.itens;

@@ -1405,6 +1405,7 @@ td{
 /* =========================
    MÓDULO PEÇAS (Peças Global + Travas e Cordões)
 ========================= */
+.menu li[hidden]{ display:none !important; }
 .menu li svg.pec-ico-menu{ width:15px; height:15px; vertical-align:-2px; margin-right:6px; stroke:currentColor; fill:none; stroke-width:2; }
 
 /* Sub-abas internas (Peças / Travas e Cordões) */
@@ -1538,3 +1539,287 @@ td{
     .pec-sino-painel{ right:-6px; width:calc(100vw - 20px); }
 }
 @media print{ .pec-sino-wrap{ display:none !important; } }
+
+/* ==========================================================
+   ANIMAÇÕES DE CARREGAMENTO E TRANSIÇÕES SUAVES (PAINÉIS)
+   - Somente transform e opacity (150ms a 250ms)
+   - Não altera o spinner nem o layout da tela de login (#login)
+   - Respeita prefers-reduced-motion
+   ========================================================== */
+
+/* --- 1) Grid Snake 3x3 (carregamentos dentro das páginas e botões) --- */
+.ex-carregando-bloco{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:10px; padding:34px 12px; color:#5a6575; font-size:13px;
+}
+.ex-carregando-inline{
+    display:inline-flex; align-items:center; gap:8px; vertical-align:middle;
+}
+.ex-snake{
+    display:inline-grid;
+    grid-template-columns:repeat(3, 1fr);
+    flex-shrink:0;
+}
+.ex-snake span{
+    display:block;
+    border-radius:2px;
+    background:#c62a1f;
+    opacity:0.18;
+    transform:scale(0.66);
+    will-change:transform, opacity;
+    animation:exSnakeTrilha 1.17s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+/* Tamanhos pequeno e médio */
+.ex-snake-sm{ gap:2px; }
+.ex-snake-sm span{ width:4px; height:4px; border-radius:1px; }
+.ex-snake-md{ gap:4px; }
+.ex-snake-md span{ width:9px; height:9px; border-radius:2px; }
+
+/* Trilha contínua em S na grade 3x3:
+   linha 1 (esq->dir): 1,2,3 | linha 2 (dir->esq): 6,5,4 | linha 3 (esq->dir): 7,8,9 */
+.ex-snake span:nth-child(1){ animation-delay:0s; }
+.ex-snake span:nth-child(2){ animation-delay:0.13s; }
+.ex-snake span:nth-child(3){ animation-delay:0.26s; }
+.ex-snake span:nth-child(6){ animation-delay:0.39s; }
+.ex-snake span:nth-child(5){ animation-delay:0.52s; }
+.ex-snake span:nth-child(4){ animation-delay:0.65s; }
+.ex-snake span:nth-child(7){ animation-delay:0.78s; }
+.ex-snake span:nth-child(8){ animation-delay:0.91s; }
+.ex-snake span:nth-child(9){ animation-delay:1.04s; }
+
+@keyframes exSnakeTrilha{
+    0%, 58%, 100%{
+        opacity:0.18;
+        transform:scale(0.66);
+    }
+    14%{
+        opacity:1;
+        transform:scale(1.06);
+    }
+    30%{
+        opacity:0.72;
+        transform:scale(0.92);
+    }
+    44%{
+        opacity:0.38;
+        transform:scale(0.76);
+    }
+}
+
+/* --- 2) Tela central com composição de cubos 3D giratórios (carregamento geral) --- */
+.ex-tela-carregando{
+    position:fixed;
+    inset:0;
+    z-index:10500;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:18px;
+    background:rgba(246, 247, 249, 0.9);
+    opacity:0;
+    pointer-events:none;
+    transform:scale(0.985);
+    transition:opacity .2s cubic-bezier(0.16, 1, 0.3, 1), transform .2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ex-tela-carregando.visivel{
+    opacity:1;
+    pointer-events:auto;
+    transform:scale(1);
+}
+.ex-tela-texto{
+    font-size:13px;
+    font-weight:600;
+    letter-spacing:.3px;
+    color:#201d1c;
+}
+.ex-cubos-palco{
+    position:relative;
+    width:64px;
+    height:64px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    perspective:320px;
+}
+.ex-cubo{
+    position:absolute;
+    transform-style:preserve-3d;
+    will-change:transform;
+}
+.ex-cubo-principal{
+    width:30px;
+    height:30px;
+    animation:exCuboGiraA 2.2s linear infinite;
+}
+.ex-cubo-satelite{
+    width:16px;
+    height:16px;
+    top:4px;
+    right:4px;
+    animation:exCuboGiraB 1.8s linear infinite;
+}
+.ex-cubo-face{
+    position:absolute;
+    inset:0;
+    border-radius:3px;
+    border:1.5px solid rgba(255, 255, 255, 0.72);
+    backface-visibility:visible;
+}
+.ex-cubo-principal .ex-cubo-face{ background:rgba(198, 42, 31, 0.88); }
+.ex-cubo-principal .ex-cubo-f1{ transform:translateZ(15px); }
+.ex-cubo-principal .ex-cubo-f2{ transform:rotateY(180deg) translateZ(15px); }
+.ex-cubo-principal .ex-cubo-f3{ transform:rotateY(90deg) translateZ(15px); background:rgba(162, 30, 21, 0.9); }
+.ex-cubo-principal .ex-cubo-f4{ transform:rotateY(-90deg) translateZ(15px); background:rgba(162, 30, 21, 0.9); }
+.ex-cubo-principal .ex-cubo-f5{ transform:rotateX(90deg) translateZ(15px); background:rgba(220, 62, 50, 0.92); }
+.ex-cubo-principal .ex-cubo-f6{ transform:rotateX(-90deg) translateZ(15px); background:rgba(138, 22, 14, 0.92); }
+
+.ex-cubo-satelite .ex-cubo-face{ background:rgba(32, 29, 28, 0.85); border-color:rgba(255, 255, 255, 0.55); }
+.ex-cubo-satelite .ex-cubo-f1{ transform:translateZ(8px); }
+.ex-cubo-satelite .ex-cubo-f2{ transform:rotateY(180deg) translateZ(8px); }
+.ex-cubo-satelite .ex-cubo-f3{ transform:rotateY(90deg) translateZ(8px); }
+.ex-cubo-satelite .ex-cubo-f4{ transform:rotateY(-90deg) translateZ(8px); }
+.ex-cubo-satelite .ex-cubo-f5{ transform:rotateX(90deg) translateZ(8px); }
+.ex-cubo-satelite .ex-cubo-f6{ transform:rotateX(-90deg) translateZ(8px); }
+
+@keyframes exCuboGiraA{
+    0%{ transform:rotateX(-24deg) rotateY(0deg) rotateZ(0deg); }
+    50%{ transform:rotateX(156deg) rotateY(180deg) rotateZ(12deg); }
+    100%{ transform:rotateX(336deg) rotateY(360deg) rotateZ(0deg); }
+}
+@keyframes exCuboGiraB{
+    0%{ transform:rotateX(25deg) rotateY(360deg); }
+    100%{ transform:rotateX(385deg) rotateY(0deg); }
+}
+
+/* --- 3) Suavização de transições existentes (150ms a 250ms, apenas transform e opacity) --- */
+.modal-fundo{
+    animation:exFundoEntra .18s cubic-bezier(0.16, 1, 0.3, 1);
+    transition:opacity .18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.modal-fundo .modal{
+    animation:exModalEntra .22s cubic-bezier(0.16, 1, 0.3, 1);
+    transition:transform .18s cubic-bezier(0.16, 1, 0.3, 1), opacity .18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.modal-fundo.saindo{ opacity:0; pointer-events:none; }
+.modal-fundo.saindo .modal{ opacity:0; transform:translateY(8px) scale(0.98); }
+
+.toast{
+    animation:exToastEntra .2s cubic-bezier(0.16, 1, 0.3, 1);
+    transition:transform .18s cubic-bezier(0.16, 1, 0.3, 1), opacity .18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.toast.saindo{
+    opacity:0;
+    transform:translate(-50%, 10px);
+}
+
+.menu{
+    transition:transform .22s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change:transform;
+}
+.menu-fundo{
+    display:block;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.menu-fundo.aberto{
+    opacity:1;
+    pointer-events:auto;
+}
+.btnMenu span{
+    transition:transform .2s cubic-bezier(0.16, 1, 0.3, 1), opacity .18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ex-pagina-entra{
+    animation:exPaginaEntra .2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn, .pec-subaba, .pec-cat-btn{
+    transition:transform .16s cubic-bezier(0.16, 1, 0.3, 1), opacity .16s ease, background-color .16s ease, border-color .16s ease, color .16s ease;
+}
+.btn:hover:not(:disabled), .pec-subaba:hover, .pec-cat-btn:hover{
+    transform:translateY(-1px);
+}
+.btn:active:not(:disabled), .pec-subaba:active, .pec-cat-btn:active{
+    transform:scale(0.97);
+}
+
+.conteudo .box tbody tr, .rsv-card, .pec-tab-card, .foto-card{
+    animation:exItemEntra .2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes exFundoEntra{
+    from{ opacity:0; }
+    to{ opacity:1; }
+}
+@keyframes exModalEntra{
+    from{ opacity:0; transform:translateY(10px) scale(0.98); }
+    to{ opacity:1; transform:translateY(0) scale(1); }
+}
+@keyframes exToastEntra{
+    from{ opacity:0; transform:translate(-50%, 12px); }
+    to{ opacity:1; transform:translate(-50%, 0); }
+}
+@keyframes exPaginaEntra{
+    from{ opacity:0; transform:translateY(6px); }
+    to{ opacity:1; transform:translateY(0); }
+}
+@keyframes exItemEntra{
+    from{ opacity:0; transform:translateY(4px); }
+    to{ opacity:1; transform:translateY(0); }
+}
+
+@media print{
+    .ex-tela-carregando, .ex-carregando-bloco{ display:none !important; }
+}
+
+/* --- 4) Acessibilidade: prefers-reduced-motion --- */
+@media (prefers-reduced-motion: reduce){
+    .ex-snake span,
+    .ex-cubo-principal,
+    .ex-cubo-satelite,
+    .modal-fundo,
+    .modal-fundo .modal,
+    .toast,
+    .ex-pagina-entra,
+    .conteudo .box tbody tr,
+    .rsv-card,
+    .pec-tab-card,
+    .foto-card{
+        animation:none !important;
+        transition:none !important;
+        transform:none !important;
+    }
+    .ex-snake span{
+        opacity:0.65;
+        transform:none;
+    }
+    .ex-snake span:nth-child(5){
+        opacity:1;
+    }
+    .ex-cubo-principal{
+        transform:rotateX(-24deg) rotateY(32deg);
+    }
+    .ex-cubo-satelite{
+        transform:rotateX(22deg) rotateY(-28deg);
+    }
+    .ex-tela-carregando,
+    .menu,
+    .menu-fundo,
+    .btnMenu span,
+    .btn,
+    .pec-subaba,
+    .pec-cat-btn{
+        transition:none !important;
+    }
+    .btn:hover:not(:disabled),
+    .btn:active:not(:disabled),
+    .pec-subaba:hover,
+    .pec-subaba:active,
+    .pec-cat-btn:hover,
+    .pec-cat-btn:active{
+        transform:none !important;
+    }
+}
+

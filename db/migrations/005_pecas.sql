@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS pecas_catalogo (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   categoria  TEXT NOT NULL CHECK (categoria IN ('Mangueiras e válvulas', 'Peças pequenas')),
   nome       TEXT NOT NULL UNIQUE,
-  ordem      INTEGER NOT NULL UNIQUE
+  ordem      INTEGER NOT NULL UNIQUE,
+  ativo      INTEGER NOT NULL DEFAULT 1 CHECK (ativo IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS pecas_preferencias_usuario (
@@ -55,6 +56,8 @@ CREATE TABLE IF NOT EXISTS pecas_lancamentos (
   baixa           INTEGER NOT NULL DEFAULT 0 CHECK (baixa IN (0, 1)),
   baixa_em        TEXT,
   baixa_por       INTEGER REFERENCES usuarios(id),
+  atualizado_por  INTEGER REFERENCES usuarios(id),
+  atualizado_em   TEXT,
   UNIQUE (tabela_id, ordem)
 );
 
@@ -95,6 +98,8 @@ CREATE TABLE IF NOT EXISTS pecas_travas_lancamentos (
   baixa           INTEGER NOT NULL DEFAULT 0 CHECK (baixa IN (0, 1)),
   baixa_em        TEXT,
   baixa_por       INTEGER REFERENCES usuarios(id),
+  atualizado_por  INTEGER REFERENCES usuarios(id),
+  atualizado_em   TEXT,
   CHECK (qtd_travas + qtd_cordoes >= 1),
   UNIQUE (tabela_id, ordem)
 );
@@ -107,6 +112,26 @@ CREATE INDEX IF NOT EXISTS idx_pecas_travas_lanc_op
 
 CREATE INDEX IF NOT EXISTS idx_pecas_travas_lanc_criado
   ON pecas_travas_lancamentos(criado_em DESC);
+
+CREATE TABLE IF NOT EXISTS pecas_notificacoes (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  tipo           TEXT NOT NULL CHECK (tipo IN ('peca', 'trava_cordao')),
+  lancamento_id  INTEGER NOT NULL,
+  criado_em      TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pecas_noti_uniq
+  ON pecas_notificacoes(tipo, lancamento_id);
+
+CREATE INDEX IF NOT EXISTS idx_pecas_noti_criado
+  ON pecas_notificacoes(criado_em DESC);
+
+CREATE TABLE IF NOT EXISTS pecas_notificacoes_lidas (
+  notificacao_id  INTEGER NOT NULL REFERENCES pecas_notificacoes(id) ON DELETE CASCADE,
+  usuario_id      INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  lida_em         TEXT NOT NULL,
+  PRIMARY KEY (notificacao_id, usuario_id)
+);
 
 -- Carga inicial idempotente do catálogo fixo de peças (7 + 25 = 32 itens)
 INSERT OR IGNORE INTO pecas_catalogo(categoria, nome, ordem) VALUES

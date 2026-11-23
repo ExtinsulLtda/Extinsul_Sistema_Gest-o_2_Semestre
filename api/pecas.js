@@ -4,9 +4,21 @@
 //   2) Travas e Cordões (tabelas próprias de até 40 linhas, quantidades 0..999)
 const express = require('express');
 const db = require('./db');
+const { obterStatusPecas } = require('./migrate');
 const U = require('./util');
 
 const { wrap, HttpErro, linhas, texto, inteiro, opcao, getConfig, TZ } = U;
+
+// Garante resposta amigável caso a migração isolada de Peças tenha falhado
+function exigeModuloPecasDisponivel(_req, res, next) {
+  const st = obterStatusPecas();
+  if (!st.ok) {
+    return res.status(503).json({
+      erro: st.erro || 'O módulo Peças está temporariamente indisponível.',
+    });
+  }
+  next();
+}
 
 const MAX_LINHAS_TABELA = 40;
 const MAX_NOME_TABELA = 100;
@@ -164,66 +176,78 @@ async function exigeAlertasPecas(req, res, next) {
 
 /* ================= CONCORRÊNCIA E FECHAMENTO AUTOMÁTICO (40 LINHAS) ================= */
 
-// Insere lançamento calculando a próxima ordem (1..40) com retentativa segura em colisões simultâneas.
-// Ao gravar a 40ª linha, fecha automaticamente a tabela correspondente.
+// Insere lançamento calculando a próxima ordem (1..40) dentro de transação atômica ("tudo ou nada"):
+// valida tabela aberta e limite <= 40, grava o lançamento, fecha a tabela na 40ª linha
+// e cria a notificação em pecas_notificacoes no mesmo commit.
 async function inserirComLimite40({ tipo, tabelaId, inserirLinha }) {
   const cfg = ESQUEMA[tipo];
   const ts = agoraBrasilia();
 
   for (let tentativa = 0; tentativa < 6; tentativa++) {
-    const tRes = await db.execute({
-      sql: `SELECT id, nome, status FROM ${cfg.tabelas} WHERE id = ?`,
-      args: [tabelaId],
-    });
-    const tab = tRes.rows[0];
-    if (!tab) throw new HttpErro(404, `${cfg.rotulo.charAt(0).toUpperCase() + cfg.rotulo.slice(1)} não encontrada.`);
-    if (tab.status !== 'aberta') {
-      throw new HttpErro(400, `Esta ${cfg.rotulo} já está fechada.`);
-    }
-
-    const cRes = await db.execute({
-      sql: `SELECT COALESCE(MAX(ordem), 0) AS max_ordem, COUNT(*) AS total
-            FROM ${cfg.lancamentos} WHERE tabela_id = ?`,
-      args: [tabelaId],
-    });
-    const maxOrdem = Number(cRes.rows[0].max_ordem || 0);
-    const total = Number(cRes.rows[0].total || 0);
-
-    // Se por qualquer motivo já atingiu 40 linhas, garante fechamento imediato e impede 41ª linha
-    if (maxOrdem >= MAX_LINHAS_TABELA || total >= MAX_LINHAS_TABELA) {
-      await db.execute({
-        sql: `UPDATE ${cfg.tabelas} SET status = 'fechada', fechada_em = COALESCE(fechada_em, ?), atualizado_em = ? WHERE id = ?`,
-        args: [ts.criado_em, ts.criado_em, tabelaId],
-      });
-      throw new HttpErro(400, `Esta ${cfg.rotulo} atingiu o limite máximo de ${MAX_LINHAS_TABELA} linhas e foi fechada.`);
-    }
-
-    const proximaOrdem = maxOrdem + 1;
     try {
-      const ins = await inserirLinha(proximaOrdem, ts);
-      const fechadaAgora = proximaOrdem >= MAX_LINHAS_TABELA;
-      if (fechadaAgora) {
-        // Fechamento automático exato na 40ª linha
-        await db.execute({
-          sql: `UPDATE ${cfg.tabelas} SET status = 'fechada', fechada_em = ?, atualizado_em = ? WHERE id = ?`,
-          args: [ts.criado_em, ts.criado_em, tabelaId],
+      return await db.emTransacao(async (tx) => {
+        const tRes = await tx.execute({
+          sql: `SELECT id, nome, status FROM ${cfg.tabelas} WHERE id = ?`,
+          args: [tabelaId],
         });
-      } else {
-        await db.execute({
-          sql: `UPDATE ${cfg.tabelas} SET atualizado_em = ? WHERE id = ?`,
-          args: [ts.criado_em, tabelaId],
+        const tab = tRes.rows[0];
+        if (!tab) throw new HttpErro(404, `${cfg.rotulo.charAt(0).toUpperCase() + cfg.rotulo.slice(1)} não encontrada.`);
+        if (tab.status !== 'aberta') {
+          throw new HttpErro(400, `Esta ${cfg.rotulo} já está fechada.`);
+        }
+
+        const cRes = await tx.execute({
+          sql: `SELECT COALESCE(MAX(ordem), 0) AS max_ordem, COUNT(*) AS total
+                FROM ${cfg.lancamentos} WHERE tabela_id = ?`,
+          args: [tabelaId],
         });
-      }
-      return {
-        id: Number(ins.lastInsertRowid),
-        ordem: proximaOrdem,
-        tabela_fechada: fechadaAgora,
-        tabela_nome: tab.nome,
-        ts,
-      };
+        const maxOrdem = Number(cRes.rows[0].max_ordem || 0);
+        const total = Number(cRes.rows[0].total || 0);
+
+        // Impede linha 41 e garante fechamento automático caso já tenha atingido 40 linhas
+        if (maxOrdem >= MAX_LINHAS_TABELA || total >= MAX_LINHAS_TABELA) {
+          await tx.execute({
+            sql: `UPDATE ${cfg.tabelas} SET status = 'fechada', fechada_em = COALESCE(fechada_em, ?), atualizado_em = ? WHERE id = ?`,
+            args: [ts.criado_em, ts.criado_em, tabelaId],
+          });
+          throw new HttpErro(400, `Esta ${cfg.rotulo} atingiu o limite máximo de ${MAX_LINHAS_TABELA} linhas e foi fechada.`);
+        }
+
+        const proximaOrdem = maxOrdem + 1;
+        const ins = await inserirLinha(tx, proximaOrdem, ts);
+        const lancamentoId = Number(ins.lastInsertRowid);
+        const fechadaAgora = proximaOrdem >= MAX_LINHAS_TABELA;
+
+        if (fechadaAgora) {
+          await tx.execute({
+            sql: `UPDATE ${cfg.tabelas} SET status = 'fechada', fechada_em = ?, atualizado_em = ? WHERE id = ?`,
+            args: [ts.criado_em, ts.criado_em, tabelaId],
+          });
+        } else {
+          await tx.execute({
+            sql: `UPDATE ${cfg.tabelas} SET atualizado_em = ? WHERE id = ?`,
+            args: [ts.criado_em, tabelaId],
+          });
+        }
+
+        // Registra notificação persistente na mesma transação do lançamento
+        await tx.execute({
+          sql: 'INSERT INTO pecas_notificacoes(tipo, lancamento_id, criado_em) VALUES (?, ?, ?)',
+          args: [tipo, lancamentoId, ts.criado_em],
+        });
+
+        return {
+          id: lancamentoId,
+          ordem: proximaOrdem,
+          tabela_fechada: fechadaAgora,
+          tabela_nome: tab.nome,
+          ts,
+        };
+      });
     } catch (e) {
+      if (e instanceof HttpErro) throw e;
       // Concorrência simultânea na mesma ordem: tenta a próxima vaga disponível
-      if (/UNIQUE/i.test(String(e.message))) continue;
+      if (/UNIQUE.*(tabela_id|ordem)/i.test(String(e.message))) continue;
       throw e;
     }
   }
@@ -299,11 +323,12 @@ async function carregarTabelaDetalhe(tipo, tabelaId, gerenteNome) {
   };
 }
 
-// Atualiza situação de uma linha; ao sair de 'conferido', remove automaticamente a baixa
-// para manter a regra: "dar baixa já marca como Conferido".
-async function atualizarSituacaoLinha({ tipo, lancamentoId, body }) {
+// Atualiza situação de uma linha com auditoria (atualizado_por / atualizado_em).
+// Ao sair de 'conferido', remove automaticamente a baixa para manter: "dar baixa já marca como Conferido".
+async function atualizarSituacaoLinha({ tipo, lancamentoId, body, usuarioId }) {
   const cfg = ESQUEMA[tipo];
   const { situacao, motivo_analise } = validaSituacaoPayload(body);
+  const agora = agoraBrasilia().criado_em;
 
   const atualRes = await db.execute({
     sql: `SELECT id, tabela_id, situacao, motivo_analise, baixa FROM ${cfg.lancamentos} WHERE id = ?`,
@@ -316,16 +341,19 @@ async function atualizarSituacaoLinha({ tipo, lancamentoId, body }) {
 
   if (situacao === 'conferido') {
     await db.execute({
-      sql: `UPDATE ${cfg.lancamentos} SET situacao = 'conferido', motivo_analise = ? WHERE id = ?`,
-      args: [novoMotivo || null, lancamentoId],
+      sql: `UPDATE ${cfg.lancamentos}
+            SET situacao = 'conferido', motivo_analise = ?, atualizado_por = ?, atualizado_em = ?
+            WHERE id = ?`,
+      args: [novoMotivo || null, usuarioId, agora, lancamentoId],
     });
   } else {
     // Se voltar para 'nao_listado' ou 'em_analise', desfaz a baixa se estava riscada
     await db.execute({
       sql: `UPDATE ${cfg.lancamentos}
-            SET situacao = ?, motivo_analise = ?, baixa = 0, baixa_em = NULL, baixa_por = NULL
+            SET situacao = ?, motivo_analise = ?, baixa = 0, baixa_em = NULL, baixa_por = NULL,
+                atualizado_por = ?, atualizado_em = ?
             WHERE id = ?`,
-      args: [situacao, novoMotivo || null, lancamentoId],
+      args: [situacao, novoMotivo || null, usuarioId, agora, lancamentoId],
     });
   }
   return { ok: true, id: lancamentoId, situacao, motivo_analise: novoMotivo || null };
@@ -340,95 +368,125 @@ async function atualizarBaixaLinha({ tipo, lancamentoId, darBaixa, usuarioId }) 
   });
   if (!atualRes.rows.length) throw new HttpErro(404, 'Lançamento não encontrado.');
 
+  const agora = agoraBrasilia().criado_em;
   if (darBaixa) {
-    const agora = agoraBrasilia().criado_em;
     await db.execute({
       sql: `UPDATE ${cfg.lancamentos}
-            SET baixa = 1, situacao = 'conferido', baixa_em = ?, baixa_por = ?
+            SET baixa = 1, situacao = 'conferido', baixa_em = ?, baixa_por = ?,
+                atualizado_por = ?, atualizado_em = ?
             WHERE id = ?`,
-      args: [agora, usuarioId, lancamentoId],
+      args: [agora, usuarioId, usuarioId, agora, lancamentoId],
     });
     return { ok: true, baixa: true, situacao: 'conferido' };
   }
 
   await db.execute({
     sql: `UPDATE ${cfg.lancamentos}
-          SET baixa = 0, situacao = 'nao_listado', baixa_em = NULL, baixa_por = NULL
+          SET baixa = 0, situacao = 'nao_listado', baixa_em = NULL, baixa_por = NULL,
+              atualizado_por = ?, atualizado_em = ?
           WHERE id = ?`,
-    args: [lancamentoId],
+    args: [usuarioId, agora, lancamentoId],
   });
   return { ok: true, baixa: false, situacao: 'nao_listado' };
 }
 
 async function riscarTodasTabela({ tipo, tabelaId, usuarioId }) {
   const cfg = ESQUEMA[tipo];
-  const tRes = await db.execute({ sql: `SELECT id FROM ${cfg.tabelas} WHERE id = ?`, args: [tabelaId] });
-  if (!tRes.rows.length) throw new HttpErro(404, `${cfg.rotulo.charAt(0).toUpperCase() + cfg.rotulo.slice(1)} não encontrada.`);
+  return db.emTransacao(async (tx) => {
+    const tRes = await tx.execute({ sql: `SELECT id FROM ${cfg.tabelas} WHERE id = ?`, args: [tabelaId] });
+    if (!tRes.rows.length) throw new HttpErro(404, `${cfg.rotulo.charAt(0).toUpperCase() + cfg.rotulo.slice(1)} não encontrada.`);
 
-  const agora = agoraBrasilia().criado_em;
-  const r = await db.execute({
-    sql: `UPDATE ${cfg.lancamentos}
-          SET baixa = 1, situacao = 'conferido', baixa_em = COALESCE(baixa_em, ?), baixa_por = COALESCE(baixa_por, ?)
-          WHERE tabela_id = ? AND (baixa = 0 OR situacao != 'conferido')`,
-    args: [agora, usuarioId, tabelaId],
+    const agora = agoraBrasilia().criado_em;
+    const r = await tx.execute({
+      sql: `UPDATE ${cfg.lancamentos}
+            SET baixa = 1, situacao = 'conferido',
+                baixa_em = COALESCE(baixa_em, ?), baixa_por = COALESCE(baixa_por, ?),
+                atualizado_por = ?, atualizado_em = ?
+            WHERE tabela_id = ? AND (baixa = 0 OR situacao != 'conferido')`,
+      args: [agora, usuarioId, usuarioId, agora, tabelaId],
+    });
+    return { ok: true, atualizadas: Number(r.rowsAffected || 0) };
   });
-  return { ok: true, atualizadas: Number(r.rowsAffected || 0) };
 }
 
-// Regras de notificação do sino do Gerente:
-// - Une lançamentos de Peças (tipo='peca', cor vermelha na UI) e Travas e Cordões (tipo='trava_cordao', cor azul na UI)
-// - Ordena do mais recente para o mais antigo (criado_em DESC)
-// - Ponto vermelho acende enquanto existir item não conferido ('nao_listado' ou 'em_analise') ou novidade após ultimo_visto_em
-async function listarNotificacoesGerente(pref) {
-  const ultimoVisto = pref && pref.ultimo_visto_em ? pref.ultimo_visto_em : '';
+// Exclui tabela, suas linhas e notificações vinculadas em uma única transação
+async function excluirTabelaComNotificacoes({ tipo, tabelaId, msgNaoEncontrada }) {
+  const cfg = ESQUEMA[tipo];
+  return db.emTransacao(async (tx) => {
+    const cur = await tx.execute({ sql: `SELECT id FROM ${cfg.tabelas} WHERE id = ?`, args: [tabelaId] });
+    if (!cur.rows.length) throw new HttpErro(404, msgNaoEncontrada);
 
-  const [itensRes, pendRes, novosRes] = await Promise.all([
-    db.execute(`
-      SELECT * FROM (
-        SELECT 'peca' AS tipo, l.id, l.tabela_id, t.nome AS tabela_nome, l.ordem,
-               l.peca_nome, l.sequencia, l.os, l.numero_peca,
-               NULL AS qtd_travas, NULL AS qtd_cordoes,
-               u.nome AS operador_nome, l.criado_em, l.data_envio, l.horario_envio,
-               l.situacao, l.motivo_analise, l.baixa
-        FROM pecas_lancamentos l
-        JOIN pecas_tabelas_globais t ON t.id = l.tabela_id
-        JOIN usuarios u ON u.id = l.operador_id
+    await tx.execute({
+      sql: `DELETE FROM pecas_notificacoes
+            WHERE tipo = ? AND lancamento_id IN (SELECT id FROM ${cfg.lancamentos} WHERE tabela_id = ?)`,
+      args: [tipo, tabelaId],
+    });
+    await tx.execute({ sql: `DELETE FROM ${cfg.tabelas} WHERE id = ?`, args: [tabelaId] });
+    return { ok: true };
+  });
+}
 
-        UNION ALL
+// Regras de notificação do sino do Gerente usando pecas_notificacoes + pecas_notificacoes_lidas:
+// - Une lançamentos de Peças (vermelho) e Travas e Cordões (azul), ordenados por criado_em DESC
+// - Ponto vermelho acende enquanto existir item não conferido ou notificação ainda não lida pelo gerente
+async function listarNotificacoesGerente(usuarioId) {
+  const [itensRes, pendRes, naoLidasRes] = await Promise.all([
+    db.execute({
+      sql: `
+        SELECT * FROM (
+          SELECT 'peca' AS tipo, l.id, l.tabela_id, t.nome AS tabela_nome, l.ordem,
+                 l.peca_nome, l.sequencia, l.os, l.numero_peca,
+                 NULL AS qtd_travas, NULL AS qtd_cordoes,
+                 u.nome AS operador_nome, l.criado_em, l.data_envio, l.horario_envio,
+                 l.situacao, l.motivo_analise, l.baixa,
+                 CASE WHEN nl.notificacao_id IS NULL THEN 1 ELSE 0 END AS nao_lido
+          FROM pecas_lancamentos l
+          JOIN pecas_tabelas_globais t ON t.id = l.tabela_id
+          JOIN usuarios u ON u.id = l.operador_id
+          LEFT JOIN pecas_notificacoes n ON n.tipo = 'peca' AND n.lancamento_id = l.id
+          LEFT JOIN pecas_notificacoes_lidas nl ON nl.notificacao_id = n.id AND nl.usuario_id = ?
 
-        SELECT 'trava_cordao' AS tipo, l.id, l.tabela_id, t.nome AS tabela_nome, l.ordem,
-               NULL AS peca_nome, NULL AS sequencia, l.os, NULL AS numero_peca,
-               l.qtd_travas, l.qtd_cordoes,
-               u.nome AS operador_nome, l.criado_em, l.data_envio, l.horario_envio,
-               l.situacao, l.motivo_analise, l.baixa
-        FROM pecas_travas_lancamentos l
-        JOIN pecas_travas_tabelas t ON t.id = l.tabela_id
-        JOIN usuarios u ON u.id = l.operador_id
-      )
-      ORDER BY criado_em DESC, id DESC
-      LIMIT 60
-    `),
+          UNION ALL
+
+          SELECT 'trava_cordao' AS tipo, l.id, l.tabela_id, t.nome AS tabela_nome, l.ordem,
+                 NULL AS peca_nome, NULL AS sequencia, l.os, NULL AS numero_peca,
+                 l.qtd_travas, l.qtd_cordoes,
+                 u.nome AS operador_nome, l.criado_em, l.data_envio, l.horario_envio,
+                 l.situacao, l.motivo_analise, l.baixa,
+                 CASE WHEN nl.notificacao_id IS NULL THEN 1 ELSE 0 END AS nao_lido
+          FROM pecas_travas_lancamentos l
+          JOIN pecas_travas_tabelas t ON t.id = l.tabela_id
+          JOIN usuarios u ON u.id = l.operador_id
+          LEFT JOIN pecas_notificacoes n ON n.tipo = 'trava_cordao' AND n.lancamento_id = l.id
+          LEFT JOIN pecas_notificacoes_lidas nl ON nl.notificacao_id = n.id AND nl.usuario_id = ?
+        )
+        ORDER BY criado_em DESC, id DESC
+        LIMIT 60
+      `,
+      args: [usuarioId, usuarioId],
+    }),
     db.execute(`
       SELECT
         (SELECT COUNT(*) FROM pecas_lancamentos WHERE situacao != 'conferido') +
         (SELECT COUNT(*) FROM pecas_travas_lancamentos WHERE situacao != 'conferido') AS n
     `),
-    ultimoVisto
-      ? db.execute({
-          sql: `SELECT
-                  (SELECT COUNT(*) FROM pecas_lancamentos WHERE criado_em > ?) +
-                  (SELECT COUNT(*) FROM pecas_travas_lancamentos WHERE criado_em > ?) AS n`,
-          args: [ultimoVisto, ultimoVisto],
-        })
-      : Promise.resolve({ rows: [{ n: 0 }] }),
+    db.execute({
+      sql: `
+        SELECT COUNT(*) AS n
+        FROM pecas_notificacoes n
+        LEFT JOIN pecas_notificacoes_lidas nl ON nl.notificacao_id = n.id AND nl.usuario_id = ?
+        WHERE nl.notificacao_id IS NULL
+      `,
+      args: [usuarioId],
+    }),
   ]);
 
   const nao_conferidos = Number(pendRes.rows[0].n || 0);
-  const novos = Number(novosRes.rows[0].n || 0);
+  const novos = Number(naoLidasRes.rows[0].n || 0);
   const itens = linhas(itensRes).map((x) => ({
     ...x,
     baixa: Number(x.baixa || 0) === 1,
-    nao_lido: ultimoVisto ? String(x.criado_em) > ultimoVisto : x.situacao !== 'conferido',
+    nao_lido: Number(x.nao_lido || 0) === 1,
   }));
 
   return {
@@ -442,11 +500,12 @@ async function listarNotificacoesGerente(pref) {
 /* ================= ROTAS DO OPERADOR ================= */
 function rotasOperador() {
   const r = express.Router();
+  r.use(exigeModuloPecasDisponivel);
 
-  // Resumo inicial da aba Peças: catálogo fixo + tabelas atualmente abertas (Peças e Travas e Cordões)
+  // Resumo inicial da aba Peças: catálogo fixo ativo + tabelas atualmente abertas (Peças e Travas e Cordões)
   r.get('/resumo', wrap(async (_req, res) => {
     const [catRes, tabPecasRes, tabTravasRes] = await Promise.all([
-      db.execute('SELECT id, categoria, nome, ordem FROM pecas_catalogo ORDER BY ordem ASC'),
+      db.execute('SELECT id, categoria, nome, ordem FROM pecas_catalogo WHERE ativo = 1 ORDER BY ordem ASC'),
       db.execute({
         sql: `
           SELECT t.id, t.nome, t.data_criacao, t.horario_criacao, COUNT(l.id) AS total_linhas
@@ -514,7 +573,7 @@ function rotasOperador() {
     });
   }));
 
-  // Envia lançamento de Peça para uma tabela global aberta
+  // Envia lançamento de Peça para uma tabela global aberta (em transação única com notificação)
   r.post('/', wrap(async (req, res) => {
     const b = req.body || {};
     const tabela_id = inteiro(b.tabela_id, { nome: 'Tabela de peças', obrig: true, min: 1 });
@@ -524,7 +583,7 @@ function rotasOperador() {
     const numero_peca = validaNumeroPeca(b.numero_peca);
 
     const catRes = await db.execute({
-      sql: 'SELECT id, nome FROM pecas_catalogo WHERE id = ?',
+      sql: 'SELECT id, nome FROM pecas_catalogo WHERE id = ? AND ativo = 1',
       args: [catalogo_id],
     });
     const peca = catRes.rows[0];
@@ -533,12 +592,16 @@ function rotasOperador() {
     const gravado = await inserirComLimite40({
       tipo: 'peca',
       tabelaId: tabela_id,
-      inserirLinha: (ordem, ts) => db.execute({
+      inserirLinha: (tx, ordem, ts) => tx.execute({
         sql: `INSERT INTO pecas_lancamentos
                 (tabela_id, ordem, catalogo_id, peca_nome, sequencia, os, numero_peca,
-                 operador_id, criado_em, data_envio, horario_envio, situacao, baixa)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'nao_listado', 0)`,
-        args: [tabela_id, ordem, peca.id, peca.nome, sequencia, os, numero_peca, req.user.id, ts.criado_em, ts.data, ts.horario],
+                 operador_id, criado_em, data_envio, horario_envio, situacao, baixa,
+                 atualizado_por, atualizado_em)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'nao_listado', 0, ?, ?)`,
+        args: [
+          tabela_id, ordem, peca.id, peca.nome, sequencia, os, numero_peca,
+          req.user.id, ts.criado_em, ts.data, ts.horario, req.user.id, ts.criado_em,
+        ],
       }),
     });
 
@@ -549,7 +612,7 @@ function rotasOperador() {
     });
   }));
 
-  // Envia lançamento de Travas e Cordões para uma tabela aberta de Travas e Cordões
+  // Envia lançamento de Travas e Cordões para uma tabela aberta (em transação única com notificação)
   r.post('/travas', wrap(async (req, res) => {
     const b = req.body || {};
     const tabela_id = inteiro(b.tabela_id, { nome: 'Tabela de travas e cordões', obrig: true, min: 1 });
@@ -558,12 +621,16 @@ function rotasOperador() {
     const gravado = await inserirComLimite40({
       tipo: 'trava_cordao',
       tabelaId: tabela_id,
-      inserirLinha: (ordem, ts) => db.execute({
+      inserirLinha: (tx, ordem, ts) => tx.execute({
         sql: `INSERT INTO pecas_travas_lancamentos
                 (tabela_id, ordem, os, qtd_travas, qtd_cordoes,
-                 operador_id, criado_em, data_envio, horario_envio, situacao, baixa)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'nao_listado', 0)`,
-        args: [tabela_id, ordem, os, qtd_travas, qtd_cordoes, req.user.id, ts.criado_em, ts.data, ts.horario],
+                 operador_id, criado_em, data_envio, horario_envio, situacao, baixa,
+                 atualizado_por, atualizado_em)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'nao_listado', 0, ?, ?)`,
+        args: [
+          tabela_id, ordem, os, qtd_travas, qtd_cordoes,
+          req.user.id, ts.criado_em, ts.data, ts.horario, req.user.id, ts.criado_em,
+        ],
       }),
     });
 
@@ -580,6 +647,7 @@ function rotasOperador() {
 /* ================= ROTAS DO GERENTE ================= */
 function rotasGerente() {
   const r = express.Router();
+  r.use(exigeModuloPecasDisponivel);
 
   // Preferência individual de alertas (única rota acessível antes de ativar os alertas)
   r.get('/preferencia', wrap(async (req, res) => {
@@ -599,14 +667,25 @@ function rotasGerente() {
 
   /* --- Notificações do sino --- */
   r.get('/notificacoes', wrap(async (req, res) => {
-    res.json(await listarNotificacoesGerente(req.pecasPreferencia));
+    res.json(await listarNotificacoesGerente(req.user.id));
   }));
 
   r.post('/notificacoes/visto', wrap(async (req, res) => {
     const agora = agoraBrasilia().criado_em;
-    await db.execute({
-      sql: `UPDATE pecas_preferencias_usuario SET ultimo_visto_em = ?, atualizado_em = ? WHERE usuario_id = ?`,
-      args: [agora, agora, req.user.id],
+    await db.emTransacao(async (tx) => {
+      await tx.execute({
+        sql: `INSERT INTO pecas_preferencias_usuario(usuario_id, recebe_alertas, ultimo_visto_em, atualizado_em)
+              VALUES (?, 1, ?, ?)
+              ON CONFLICT(usuario_id) DO UPDATE SET
+                ultimo_visto_em = excluded.ultimo_visto_em,
+                atualizado_em = excluded.atualizado_em`,
+        args: [req.user.id, agora, agora],
+      });
+      await tx.execute({
+        sql: `INSERT OR IGNORE INTO pecas_notificacoes_lidas(notificacao_id, usuario_id, lida_em)
+              SELECT id, ?, ? FROM pecas_notificacoes`,
+        args: [req.user.id, agora],
+      });
     });
     res.json({ ok: true, ultimo_visto_em: agora });
   }));
@@ -658,18 +737,16 @@ function rotasGerente() {
 
   r.delete('/tabelas/:id', wrap(async (req, res) => {
     const id = inteiro(req.params.id, { obrig: true, nome: 'Tabela', min: 1 });
-    const cur = await db.execute({ sql: 'SELECT id FROM pecas_tabelas_globais WHERE id = ?', args: [id] });
-    if (!cur.rows.length) throw new HttpErro(404, 'Tabela de peças não encontrada.');
-    await db.batch([
-      { sql: 'DELETE FROM pecas_lancamentos WHERE tabela_id = ?', args: [id] },
-      { sql: 'DELETE FROM pecas_tabelas_globais WHERE id = ?', args: [id] },
-    ], 'write');
-    res.json({ ok: true });
+    res.json(await excluirTabelaComNotificacoes({
+      tipo: 'peca',
+      tabelaId: id,
+      msgNaoEncontrada: 'Tabela de peças não encontrada.',
+    }));
   }));
 
   r.put('/lancamentos/:id/situacao', wrap(async (req, res) => {
     const lancamentoId = inteiro(req.params.id, { obrig: true, nome: 'Lançamento', min: 1 });
-    res.json(await atualizarSituacaoLinha({ tipo: 'peca', lancamentoId, body: req.body || {} }));
+    res.json(await atualizarSituacaoLinha({ tipo: 'peca', lancamentoId, body: req.body || {}, usuarioId: req.user.id }));
   }));
 
   r.put('/lancamentos/:id/baixa', wrap(async (req, res) => {
@@ -731,18 +808,16 @@ function rotasGerente() {
 
   r.delete('/travas/tabelas/:id', wrap(async (req, res) => {
     const id = inteiro(req.params.id, { obrig: true, nome: 'Tabela', min: 1 });
-    const cur = await db.execute({ sql: 'SELECT id FROM pecas_travas_tabelas WHERE id = ?', args: [id] });
-    if (!cur.rows.length) throw new HttpErro(404, 'Tabela de travas e cordões não encontrada.');
-    await db.batch([
-      { sql: 'DELETE FROM pecas_travas_lancamentos WHERE tabela_id = ?', args: [id] },
-      { sql: 'DELETE FROM pecas_travas_tabelas WHERE id = ?', args: [id] },
-    ], 'write');
-    res.json({ ok: true });
+    res.json(await excluirTabelaComNotificacoes({
+      tipo: 'trava_cordao',
+      tabelaId: id,
+      msgNaoEncontrada: 'Tabela de travas e cordões não encontrada.',
+    }));
   }));
 
   r.put('/travas/lancamentos/:id/situacao', wrap(async (req, res) => {
     const lancamentoId = inteiro(req.params.id, { obrig: true, nome: 'Lançamento', min: 1 });
-    res.json(await atualizarSituacaoLinha({ tipo: 'trava_cordao', lancamentoId, body: req.body || {} }));
+    res.json(await atualizarSituacaoLinha({ tipo: 'trava_cordao', lancamentoId, body: req.body || {}, usuarioId: req.user.id }));
   }));
 
   r.put('/travas/lancamentos/:id/baixa', wrap(async (req, res) => {

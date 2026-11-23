@@ -219,8 +219,8 @@
           let tok = 0;
           async function carregar() {
             const cid = selCliente.value, meu = ++tok;
-            if (!cid) { aviso('⚠ Selecione o cliente primeiro.'); return; }
-            aviso('Carregando extintores…');
+            if (!cid) { aviso('Selecione o cliente primeiro.'); return; }
+            area.innerHTML = Ex.carregando({ tamanho: 'sm', inline: true, texto: 'Carregando extintores…' });
             try {
               let todos = [], pg = 1, paginas = 1;
               do { const d = await api('/extintores', { params: { cliente_id: cid, limit: 100, page: pg } }); todos = todos.concat(d.itens); paginas = d.paginas; pg++; } while (pg <= paginas);
@@ -312,7 +312,7 @@
     async function gerar() {
       const r = RELATORIOS.find((x) => x.v === $('rel-tipo').value);
       const saida = $('rel-saida');
-      saida.innerHTML = '<div class="carregando-pag">Gerando…</div>';
+      saida.innerHTML = Ex.carregando({ tamanho: 'md', texto: 'Gerando relatório…' });
       try {
         const d = await api('/relatorios/' + r.v, { params: { de: r.periodo ? $('rel-de').value : '', ate: r.periodo ? $('rel-ate').value : '', status: r.status ? $('rel-status').value : '' } });
         ultimo = d; tipoAtual = r.v;

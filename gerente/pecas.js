@@ -531,9 +531,22 @@
     }
 
     async function recarregarTudo() {
-      await carregarListaEDetalhe();
-      pintar();
-      await atualizarNotificacoes();
+      const btnRec = cont.querySelector('#pec-recarregar');
+      if (btnRec) {
+        btnRec.disabled = true;
+        btnRec.innerHTML = Ex.carregando({ tamanho: 'sm', inline: true, texto: 'Atualizando…' });
+      }
+      try {
+        await carregarListaEDetalhe();
+        pintar();
+        await atualizarNotificacoes();
+      } catch (e) {
+        Ex.toast(e.message || 'Erro ao atualizar tabelas.', true);
+        if (btnRec && btnRec.isConnected) {
+          btnRec.disabled = false;
+          btnRec.textContent = 'Atualizar';
+        }
+      }
     }
 
     aoAtualizarPagina = () => {

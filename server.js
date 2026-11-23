@@ -2,10 +2,19 @@
 require('dotenv').config();
 const path = require('path');
 const express = require('express');
+const db = require('./api/db');
 const { migrar } = require('./api/migrate');
 const app = require('./src/app');
 
 const PORT = Number(process.env.PORT) || 3000;
+
+// Recusa iniciar em produção (NODE_ENV=production) caso faltem variáveis do Turso
+try {
+  db.validarAmbienteProducao();
+} catch (e) {
+  console.error('[banco] ' + e.message);
+  process.exit(1);
+}
 
 /* ---------- páginas (somente as pastas públicas) ---------- */
 ['css', 'js', 'assets', 'gerente', 'operador', 'motorista'].forEach((p) =>
@@ -16,7 +25,7 @@ app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 if (process.env.TURSO_DATABASE_URL) {
   console.log('[banco] Usando o Turso (os dados ficam salvos fora do servidor).');
 } else {
-  console.warn('[banco] ATENÇÃO: TURSO_DATABASE_URL não definido — usando o arquivo local db/extinsul.db.');
+  console.warn('[banco] ATENÇÃO (desenvolvimento local): TURSO_DATABASE_URL não definido — usando db/extinsul.db.');
 }
 
 migrar()

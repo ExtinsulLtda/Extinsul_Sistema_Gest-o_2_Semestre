@@ -65,7 +65,7 @@
     const classe = (s) => (s === 'concluida' ? 'feito' : s === 'em_andamento' ? 'andamento' : 'aberto');
     return `<div class="mapaArea">
         <div><div class="mapa" id="mapa-caixa" style="z-index:0"></div>
-          <div id="mapa-info" class="mudo" style="margin-top:8px;font-size:13px">Carregando mapa…</div></div>
+          <div id="mapa-info" class="mudo" style="margin-top:8px;font-size:13px">${Ex.carregando({ tamanho: 'sm', inline: true, texto: 'Carregando mapa…' })}</div></div>
         <div class="rotas">${itens.length ? itens.map((o, i) => `<div class="rota"><div class="numero ${classe(o.status)}">${i + 1}</div>
           <div class="rotaTexto"><strong>${esc(o.cliente)}</strong><span>${esc(o.numero)} · ${esc(o.tipo)}<br>${horario(o)}${o.data < Ex.hoje() ? ' · <b style="color:#c32727">atrasada</b>' : ''}</span></div></div>`).join('')
           : '<div class="vazio">Nenhuma ordem de serviço na rota.</div>'}</div>
@@ -139,7 +139,7 @@
     const destinos = [];
     rota.filter((o) => o.status === 'em_andamento').forEach((o) => destinosDe(o).forEach((d) => destinos.push({ ...d, os: o.numero, cliente: o.cliente })));
     if (!destinos.length) { info.innerHTML = 'Nenhuma entrega <strong>em andamento</strong>. Toque em “Iniciar” em uma OS para ver a rota aqui.'; return; }
-    info.textContent = 'Buscando sua localização…';
+    info.innerHTML = Ex.carregando({ tamanho: 'sm', inline: true, texto: 'Buscando sua localização…' });
     let origem = await posicaoAtual(), origemTxt = 'sua localização';
     if (!origem) { origem = VARGINHA; origemTxt = 'o centro de Varginha (localização não autorizada)'; }
     L.circleMarker(origem, { radius: 8, color: '#1681ef', fillOpacity: 0.9 }).addTo(mapa).bindPopup('Você está aqui');
@@ -236,7 +236,7 @@
     const lista = cont.querySelector('#r-lista');
     let itens = [];
     async function carregar() {
-      lista.innerHTML = '<div class="carregando-pag">Carregando…</div>';
+      lista.innerHTML = Ex.carregando({ texto: 'Carregando rotas…' });
       try {
         const d = await api('/rota', { params: { data: dia } });
         itens = d.itens;
@@ -449,7 +449,7 @@
       e.preventDefault();
       erro.style.display = 'none';
       btnSub.disabled = true;
-      btnSub.textContent = 'Registrando…';
+      btnSub.innerHTML = Ex.carregando({ tamanho: 'sm', inline: true, texto: 'Registrando…' });
       try {
         const vals = Object.fromEntries(new FormData(form));
         const r = await api('/reservas', { method: 'POST', body: vals });
