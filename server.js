@@ -8,9 +8,10 @@ const app = require('./src/app');
 
 const PORT = Number(process.env.PORT) || 3000;
 
-// Recusa iniciar em produção (NODE_ENV=production) caso faltem variáveis do Turso
+// Valida variáveis do Turso: em Node sem Turso definido, inicia com banco local e registra aviso
+let estadoBanco;
 try {
-  db.validarAmbienteProducao();
+  estadoBanco = db.validarAmbienteProducao();
 } catch (e) {
   console.error('[banco] ' + e.message);
   process.exit(1);
@@ -22,10 +23,10 @@ try {
 app.get('/index.html', (_req, res) => res.redirect('/'));
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
-if (process.env.TURSO_DATABASE_URL) {
+if (estadoBanco.modo === 'turso') {
   console.log('[banco] Usando o Turso (os dados ficam salvos fora do servidor).');
-} else {
-  console.warn('[banco] ATENÇÃO (desenvolvimento local): TURSO_DATABASE_URL não definido — usando db/extinsul.db.');
+} else if (estadoBanco.aviso) {
+  console.warn('[banco] ' + estadoBanco.aviso);
 }
 
 migrar()

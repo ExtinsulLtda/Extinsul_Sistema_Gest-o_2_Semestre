@@ -20,9 +20,10 @@ fallthrough = true
 
 # Segredos (não coloque aqui): wrangler secret put TURSO_DATABASE_URL | TURSO_AUTH_TOKEN | SESSION_SECRET
 
-# express.json/body-parser não carregam no Workers (iconv-lite); trocados por um stub
+# express.json/body-parser e driver nativo libsql não carregam no Workers; redirecionados para versões compatíveis
 [alias]
 "body-parser" = "./src/stub-body-parser.js"
+"@libsql/client" = "./src/libsql-worker.js"
 
 [observability.logs]
 enabled = true

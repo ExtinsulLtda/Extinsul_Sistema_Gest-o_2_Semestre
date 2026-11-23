@@ -4,38 +4,76 @@
 let cliente = null;
 let fkAtivadoLocal = false;
 
-function ehProducao() {
-  return process.env.WORKERS === '1' || process.env.NODE_ENV === 'production';
+function ehWorkers() {
+  return process.env.WORKERS === '1';
 }
 
-// Em produção (Cloudflare Workers ou NODE_ENV=production), recusa iniciar sem as variáveis do Turso.
-// Evita que os dados caiam em um arquivo SQLite local efêmero sem o usuário perceber.
+function ehProducao() {
+  return ehWorkers() || process.env.NODE_ENV === 'production';
+}
+
+// No Workers, Turso é obrigatório (não existe arquivo local).
+// No servidor Node, se nenhuma variável do Turso foi configurada, inicia com banco local provisório e avisa no log;
+// se o usuário configurou apenas parte do Turso (ex.: URL sem token), bloqueia para evitar erro silencioso.
 function validarAmbienteProducao() {
-  if (!ehProducao()) return;
   const url = String(process.env.TURSO_DATABASE_URL || '').trim();
   const token = String(process.env.TURSO_AUTH_TOKEN || '').trim();
-  if (!url) {
-    throw new Error('Configuração inválida em produção: TURSO_DATABASE_URL não definida.');
+  const noWorkers = ehWorkers();
+  const emProd = ehProducao();
+
+  if (noWorkers) {
+    if (!url) {
+      throw new Error('Configuração inválida no Workers: TURSO_DATABASE_URL não definida.');
+    }
+    if (/^file:/i.test(url)) {
+      throw new Error('Configuração inválida no Workers: URL local (file:) não é permitida.');
+    }
+    if (!/^(libsql|https):\/\//i.test(url)) {
+      throw new Error('Configuração inválida no Workers: TURSO_DATABASE_URL deve usar libsql:// ou https://.');
+    }
+    if (!token) {
+      throw new Error('Configuração inválida no Workers: TURSO_AUTH_TOKEN não definido.');
+    }
+    return { modo: 'turso' };
   }
+
+  if (!url && !token) {
+    return {
+      modo: 'local',
+      aviso: emProd
+        ? 'AVISO (produção sem Turso): TURSO_DATABASE_URL/TURSO_AUTH_TOKEN não definidos — iniciando com o banco local provisório (db/extinsul.db). Configure o Turso para persistência definitiva.'
+        : 'ATENÇÃO (desenvolvimento local): TURSO_DATABASE_URL não definido — usando db/extinsul.db.',
+    };
+  }
+
+  if (!url && token) {
+    throw new Error('Configuração inválida do Turso: TURSO_AUTH_TOKEN definido sem TURSO_DATABASE_URL.');
+  }
+
   if (/^file:/i.test(url)) {
-    throw new Error('Configuração inválida em produção: URL local (file:) não é permitida.');
+    if (emProd) {
+      throw new Error('Configuração inválida em produção: URL local (file:) não é permitida quando TURSO_DATABASE_URL é informada.');
+    }
+    return { modo: 'local' };
   }
+
   if (!/^(libsql|https):\/\//i.test(url)) {
-    throw new Error('Configuração inválida em produção: TURSO_DATABASE_URL deve usar libsql:// ou https://.');
+    throw new Error('Configuração inválida do Turso: TURSO_DATABASE_URL deve usar libsql:// ou https://.');
   }
   if (!token) {
-    throw new Error('Configuração inválida em produção: TURSO_AUTH_TOKEN não definido.');
+    throw new Error('Configuração inválida do Turso: TURSO_AUTH_TOKEN não definido.');
   }
+  return { modo: 'turso' };
 }
 
 function obter() {
   if (!cliente) {
-    validarAmbienteProducao();
+    const info = validarAmbienteProducao();
     const url = String(process.env.TURSO_DATABASE_URL || '').trim();
     const token = String(process.env.TURSO_AUTH_TOKEN || '').trim();
     // No Workers só funciona a versão HTTP (@libsql/client/web); no Node usa a completa (aceita arquivo local)
-    const { createClient } = process.env.WORKERS ? require('@libsql/client/web') : require('@libsql/client');
-    if (!url) {
+    const { createClient } = ehWorkers() ? require('@libsql/client/web') : require('@libsql/client');
+    if (info.modo === 'local' && !url) {
       cliente = createClient({ url: 'file:' + require('path').join(__dirname, '..', 'db', 'extinsul.db') });
     } else {
       cliente = createClient({ url, authToken: token || undefined });
@@ -69,7 +107,7 @@ async function emTransacao(fn) {
 
 // Mesma interface do cliente (execute, batch, executeMultiple, transaction...), criado sob demanda
 module.exports = new Proxy(
-  { validarAmbienteProducao, ehProducao, garantirForeignKeys, emTransacao },
+  { validarAmbienteProducao, ehProducao, ehWorkers, garantirForeignKeys, emTransacao },
   {
     get(alvo, prop) {
       if (Object.prototype.hasOwnProperty.call(alvo, prop)) return alvo[prop];

@@ -83,7 +83,7 @@ test('005_pecas.sql define exatamente 32 pecas iniciais (7 + 25), notificacoes e
   assert.equal(peq.length, 25);
 });
 
-test('validarAmbienteProducao exige TURSO_DATABASE_URL e TURSO_AUTH_TOKEN em producao/Workers', () => {
+test('validarAmbienteProducao permite fallback local em Node, rejeita parcial e exige Turso no Workers', () => {
   const saved = {
     NODE_ENV: process.env.NODE_ENV,
     WORKERS: process.env.WORKERS,
@@ -101,11 +101,15 @@ test('validarAmbienteProducao exige TURSO_DATABASE_URL e TURSO_AUTH_TOKEN em pro
     delete process.env.WORKERS;
     delete process.env.TURSO_DATABASE_URL;
     delete process.env.TURSO_AUTH_TOKEN;
-    assert.doesNotThrow(() => dbMod.validarAmbienteProducao());
+    assert.equal(dbMod.validarAmbienteProducao().modo, 'local');
 
+    // Em NODE_ENV=production sem Turso definido, permite subir com banco local e aviso
     process.env.NODE_ENV = 'production';
-    assert.throws(() => dbMod.validarAmbienteProducao(), /TURSO_DATABASE_URL/);
+    const resProdLocal = dbMod.validarAmbienteProducao();
+    assert.equal(resProdLocal.modo, 'local');
+    assert.match(resProdLocal.aviso, /produção sem Turso/i);
 
+    // Configuração parcial ou explícita file: em produção continua bloqueada
     process.env.TURSO_DATABASE_URL = 'file:db/extinsul.db';
     process.env.TURSO_AUTH_TOKEN = 'tok';
     assert.throws(() => dbMod.validarAmbienteProducao(), /file:/);
@@ -114,36 +118,88 @@ test('validarAmbienteProducao exige TURSO_DATABASE_URL e TURSO_AUTH_TOKEN em pro
     delete process.env.TURSO_AUTH_TOKEN;
     assert.throws(() => dbMod.validarAmbienteProducao(), /TURSO_AUTH_TOKEN/);
 
-    process.env.TURSO_AUTH_TOKEN = 'tok-teste';
-    assert.doesNotThrow(() => dbMod.validarAmbienteProducao());
+    delete process.env.TURSO_DATABASE_URL;
+    process.env.TURSO_AUTH_TOKEN = 'tok-orfao';
+    assert.throws(() => dbMod.validarAmbienteProducao(), /TURSO_DATABASE_URL/);
 
+    process.env.TURSO_DATABASE_URL = 'libsql://banco-teste.turso.io';
+    process.env.TURSO_AUTH_TOKEN = 'tok-teste';
+    assert.equal(dbMod.validarAmbienteProducao().modo, 'turso');
+
+    // No Cloudflare Workers (WORKERS=1), Turso é sempre obrigatório
     delete process.env.NODE_ENV;
     process.env.WORKERS = '1';
+    delete process.env.TURSO_DATABASE_URL;
     delete process.env.TURSO_AUTH_TOKEN;
+    assert.throws(() => dbMod.validarAmbienteProducao(), /TURSO_DATABASE_URL/);
+
+    process.env.TURSO_DATABASE_URL = 'libsql://banco-teste.turso.io';
     assert.throws(() => dbMod.validarAmbienteProducao(), /TURSO_AUTH_TOKEN/);
+
+    process.env.TURSO_AUTH_TOKEN = 'tok-teste';
+    assert.equal(dbMod.validarAmbienteProducao().modo, 'turso');
   } finally {
     restaurar();
   }
 });
 
-test('server.js recusa iniciar em NODE_ENV=production sem credenciais Turso', () => {
-  const env = { ...process.env, NODE_ENV: 'production' };
-  delete env.TURSO_DATABASE_URL;
-  delete env.TURSO_AUTH_TOKEN;
+test('server.js inicia em NODE_ENV=production sem Turso (fallback) e recusa configuracao parcial', async () => {
+  const { spawn } = require('node:child_process');
+  const envParcial = { ...process.env, NODE_ENV: 'production', TURSO_DATABASE_URL: 'libsql://parcial.turso.io' };
+  delete envParcial.TURSO_AUTH_TOKEN;
   let falhou = false;
   try {
     execFileSync(process.execPath, ['server.js'], {
       cwd: path.join(__dirname, '..'),
-      env,
+      env: envParcial,
       encoding: 'utf8',
       timeout: 5000,
     });
   } catch (err) {
     falhou = true;
     assert.equal(err.status, 1);
-    assert.match(String(err.stderr || err.message), /TURSO_DATABASE_URL/);
+    assert.match(String(err.stderr || err.message), /TURSO_AUTH_TOKEN/);
   }
   assert.equal(falhou, true);
+
+  const wr = fs.readFileSync(path.join(__dirname, '..', 'wrangler.toml'), 'utf8');
+  assert.match(wr, /"@libsql\/client"\s*=\s*"\.\/src\/libsql-worker\.js"/);
+  const wk = fs.readFileSync(path.join(__dirname, '..', 'src', 'worker.js'), 'utf8');
+  assert.match(wk, /^[^\n]*\n[^\n]*\nimport '\.\/worker-env\.js';/);
+
+  // Sobe server.js em NODE_ENV=production sem variáveis do Turso e confirma que abre a porta e responde
+  const envFallback = { ...process.env, NODE_ENV: 'production', PORT: '39876' };
+  delete envFallback.TURSO_DATABASE_URL;
+  delete envFallback.TURSO_AUTH_TOKEN;
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: path.join(__dirname, '..'),
+    env: envFallback,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let logs = '';
+  child.stdout.on('data', (d) => { logs += d.toString(); });
+  child.stderr.on('data', (d) => { logs += d.toString(); });
+  try {
+    await new Promise((resolve, reject) => {
+      const prazo = setTimeout(() => reject(new Error('Timeout esperando server.js em producao: ' + logs)), 8000);
+      child.on('exit', (code) => {
+        clearTimeout(prazo);
+        reject(new Error(`server.js saiu inesperadamente (${code}): ${logs}`));
+      });
+      const checa = setInterval(() => {
+        if (logs.includes('Extinsul rodando')) {
+          clearInterval(checa);
+          clearTimeout(prazo);
+          resolve();
+        }
+      }, 50);
+    });
+    assert.match(logs, /produção sem Turso/i);
+    const resp = await fetch('http://127.0.0.1:39876/api/login/status');
+    assert.equal(resp.status, 200);
+  } finally {
+    child.kill('SIGKILL');
+  }
 });
 
 test('migracao idempotente, FK ativa, rejeicao da linha 41, rollback e isolamento de falha em Peças', () => {

@@ -1,5 +1,6 @@
 // Entrada do Cloudflare Worker: roda a API Express (rotas /api/*); as páginas estáticas
 // (HTML/CSS/JS) são servidas direto pelo Workers Assets (pasta public/).
+import './worker-env.js';
 import { httpServerHandler } from 'cloudflare:node';
 import estoqueSql from '../db/migrations/002_estoque.sql';
 import loginSql from '../db/migrations/003_login_seguranca.sql';
@@ -8,8 +9,6 @@ import pecasSql from '../db/migrations/005_pecas.sql';
 import app from './app.js';
 import db from '../api/db.js';
 import { migrar } from '../api/migrate.js';
-
-process.env.WORKERS = '1';
 
 // Migração idempotente: roda uma vez por instância do Worker, antes da primeira requisição à API
 let migrado = null;
